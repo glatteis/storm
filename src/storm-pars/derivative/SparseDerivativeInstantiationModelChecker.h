@@ -13,7 +13,7 @@
 namespace storm {
     namespace derivative {
         template <typename ValueType, typename ConstantType>
-        class DerivativeEvaluationHelper {
+        class SparseDerivativeInstantiationModelChecker {
         public:
             /**
              * Computes the derivative of the reachability probability or the derivative of the expected reward of a given Dtmc at an instantiation
@@ -25,11 +25,11 @@ namespace storm {
              * a substantial amount of memory if the model is big and there's a large number of parameters.
              * @param parameters The Dtmc's parameters. See storm::models::sparse::getAllParameters
              * @param formulas The first element of this is considered, which needs to be an eventually formula.
-             * @param mode The DerivativeEvaluationHelper's mode, whether it should compute the derivative of a probability
+             * @param mode The SparseDerivativeInstantiationModelChecker's mode, whether it should compute the derivative of a probability
              * or the derivative of an expected reward.
              * @param rewardModelName When computing an expected reward, the name of the reward model in the Dtmc.
              */
-            DerivativeEvaluationHelper<ValueType, ConstantType>(
+            SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>(
                     Environment const& env,
                     std::shared_ptr<storm::models::sparse::Dtmc<ValueType>> const model,
                     std::set<typename utility::parametric::VariableType<ValueType>::type> const& parameters,

@@ -3,7 +3,7 @@
 namespace storm {
 	namespace derivative {
 		/**
-		* What the DerivativeEvaluationHelper should return the derivation for,
+		* What the SparseDerivativeInstantiationModelChecker should return the derivation for,
 		* and what the GradientDescentInstantiationSearcher optimizes for.
 		*/
 		enum class ResultType {

@@ -621,7 +621,7 @@ namespace storm {
                 startPoint = point;
             }
 
-            // Use the DerivativeEvaluationHelper to retrieve the derivative at an instantiation that is input by the user
+            // Use the SparseDerivativeInstantiationModelChecker to retrieve the derivative at an instantiation that is input by the user
             if (auto instantiationString = derSettings.getDerivativeAtInstantiation()) {
                 std::unordered_map<std::string, std::string> keyValue = storm::parser::parseKeyValueString(*instantiationString);
                 std::map<typename utility::parametric::VariableType<ValueType>::type, typename utility::parametric::CoefficientType<ValueType>::type> instantiation;
@@ -630,7 +630,7 @@ namespace storm {
                     auto value = storm::utility::convertNumber<typename utility::parametric::CoefficientType<ValueType>::type>(pair.second);
                     instantiation.emplace(variable, value);
                 }
-                derivative::DerivativeEvaluationHelper<ValueType, storm::RationalNumber> evaluationHelper(Environment(), dtmc, vars, formulas,
+                derivative::SparseDerivativeInstantiationModelChecker<ValueType, storm::RationalNumber> evaluationHelper(Environment(), dtmc, vars, formulas,
                     resultType, rewardModel);
                 modelchecker::SparseDtmcInstantiationModelChecker<models::sparse::Dtmc<ValueType>, storm::RationalNumber> instantiationModelChecker(*dtmc);
 

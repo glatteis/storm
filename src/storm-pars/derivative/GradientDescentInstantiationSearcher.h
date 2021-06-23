@@ -7,7 +7,7 @@
 #include "logic/Formula.h"
 #include "solver/LinearEquationSolver.h"
 #include "storm-pars/analysis/MonotonicityChecker.h"
-#include "storm-pars/derivative/DerivativeEvaluationHelper.h"
+#include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
 #include "storm-pars/modelchecker/instantiation/SparseDtmcInstantiationModelChecker.h"
 #include "storm-pars/utility/parametric.h"
 #include "storm/models/sparse/Dtmc.h"
@@ -24,13 +24,13 @@ namespace storm {
             /**
              * The GradientDescentInstantiationSearcher can find extrema and feasible instantiations in pMCs,
              * for either rewards or probabilities.
-             * Internally uses the DerivativeEvaluationHelper to evaluate derivatives at instantiations.
+             * Internally uses the SparseDerivativeInstantiationModelChecker to evaluate derivatives at instantiations.
              * @param env The environment. Always pass the same environment to the gradientDescent call!
              * @param model The Dtmc to optimize. This must have _one_
              * target state labeled "target" and _one_ initial state labeled "init". Note this is exactly the
              * kind of Dtmc the SparseParametricDtmcSimplifier spits out.
              * The constructor will setup the matrices used for computing the derivatives by constructing the
-             * DerivativeEvaluationHelper. Note this can consume a substantial amount of memory if the model is
+             * SparseDerivativeInstantiationModelChecker. Note this can consume a substantial amount of memory if the model is
              * big and there's a large number of parameters.
              * @param parameters The Dtmc's parameters. See storm::models::sparse::getAllParameters
              * @param formulas The first element of this is considered, which needs to be an eventually formula.
@@ -71,10 +71,10 @@ namespace storm {
               , recordRun(recordRun) {
                 if (formula->isProbabilityOperatorFormula()) {
                     resultType = ResultType::PROBABILITY;
-                    derivativeEvaluationHelper = std::move(std::make_unique<storm::derivative::DerivativeEvaluationHelper<ValueType, ConstantType>>(env, model, parameters, formulas));
+                    derivativeEvaluationHelper = std::move(std::make_unique<storm::derivative::SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>>(env, model, parameters, formulas));
                 } else if (formula->isRewardOperatorFormula()) {
                     resultType = ResultType::REWARD;
-                    derivativeEvaluationHelper = std::move(std::make_unique<storm::derivative::DerivativeEvaluationHelper<ValueType, ConstantType>>(env, model, parameters, formulas, ResultType::REWARD, std::string("")));
+                    derivativeEvaluationHelper = std::move(std::make_unique<storm::derivative::SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>>(env, model, parameters, formulas, ResultType::REWARD, std::string("")));
                 } else {
                     STORM_LOG_ERROR("Formula must be reward operator formula or probability operator formula!");
                 }
@@ -234,7 +234,7 @@ namespace storm {
         private:
             const std::shared_ptr<models::sparse::Dtmc<ValueType>> model;
             const std::set<typename utility::parametric::VariableType<ValueType>::type> parameters;
-            std::unique_ptr<storm::derivative::DerivativeEvaluationHelper<ValueType, ConstantType>> derivativeEvaluationHelper;
+            std::unique_ptr<storm::derivative::SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>> derivativeEvaluationHelper;
             const std::shared_ptr<storm::logic::Formula const> formula;
             const std::unique_ptr<modelchecker::SparseDtmcInstantiationModelChecker<models::sparse::Dtmc<ValueType>, ConstantType>> instantiationModelChecker;
             const std::unique_ptr<storm::analysis::MonotonicityChecker<ValueType>> monotonicityChecker;

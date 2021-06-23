@@ -1,4 +1,4 @@
-#include "DerivativeEvaluationHelper.h"
+#include "SparseDerivativeInstantiationModelChecker.h"
 #include "analysis/GraphConditions.h"
 #include "environment/Environment.h"
 #include "environment/solver/SolverEnvironment.h"
@@ -34,7 +34,7 @@ namespace storm {
         using CoefficientType = typename utility::parametric::CoefficientType<ValueType>::type;
 
         template<typename ValueType, typename ConstantType>
-        ConstantType DerivativeEvaluationHelper<ValueType, ConstantType>::calculateDerivative(
+        ConstantType SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>::calculateDerivative(
                 Environment const& env,
                 const VariableType<ValueType> parameter,
                 const std::map<VariableType<ValueType>, CoefficientType<ValueType>> &substitutions,
@@ -97,7 +97,7 @@ namespace storm {
         }
 
         template<typename ValueType, typename ConstantType>
-        void DerivativeEvaluationHelper<ValueType, ConstantType>::setup(
+        void SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>::setup(
                     Environment const& env,
                     std::set<typename utility::parametric::VariableType<ValueType>::type> const& parameters,
                     std::vector<std::shared_ptr<storm::logic::Formula const>> const& formulas)  {
@@ -105,15 +105,15 @@ namespace storm {
             storm::logic::OperatorInformation opInfo(boost::none, boost::none);
             switch (mode) {
                 case ResultType::PROBABILITY: {
-                    STORM_LOG_ASSERT(formula->isProbabilityOperatorFormula(), "The DerivativeEvaluationHelper is set to PROBABILITY, but the input formula is not a probability operator formula!");
-                    STORM_LOG_ASSERT(rewardModelName == boost::none, "Solving for a probability in the DerivativeEvaluationHelper, but the rewardModelName is not set to boost::none.");
+                    STORM_LOG_ASSERT(formula->isProbabilityOperatorFormula(), "The SparseDerivativeInstantiationModelChecker is set to PROBABILITY, but the input formula is not a probability operator formula!");
+                    STORM_LOG_ASSERT(rewardModelName == boost::none, "Solving for a probability in the SparseDerivativeInstantiationModelChecker, but the rewardModelName is not set to boost::none.");
                     this->formulaWithoutBound = std::make_shared<storm::logic::ProbabilityOperatorFormula>(
                             formula->asProbabilityOperatorFormula().getSubformula().asSharedPointer(), opInfo);
                     break;
                 }
                 case ResultType::REWARD: {
-                    STORM_LOG_ASSERT(formula->isRewardOperatorFormula(), "The DerivativeEvaluationHelper is set to REWARD, but the input formula is not a reward operator formula!");
-                    STORM_LOG_ASSERT(rewardModelName != boost::none, "Solving for a reward in the DerivativeEvaluationHelper, but the rewardModelName is boost::none.");
+                    STORM_LOG_ASSERT(formula->isRewardOperatorFormula(), "The SparseDerivativeInstantiationModelChecker is set to REWARD, but the input formula is not a reward operator formula!");
+                    STORM_LOG_ASSERT(rewardModelName != boost::none, "Solving for a reward in the SparseDerivativeInstantiationModelChecker, but the rewardModelName is boost::none.");
                     this->formulaWithoutBound = std::make_shared<storm::logic::RewardOperatorFormula>(
                             formula->asRewardOperatorFormula().getSubformula().asSharedPointer());
                     model->reduceToStateBasedRewards();
@@ -253,7 +253,7 @@ namespace storm {
 
 
         template<typename ValueType, typename ConstantType>
-        void DerivativeEvaluationHelper<ValueType, ConstantType>::initializeInstantiatedMatrix(
+        void SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>::initializeInstantiatedMatrix(
             storage::SparseMatrix<ValueType> &matrix,
             storage::SparseMatrix<ConstantType> &matrixInstantiated
         )  {
@@ -279,7 +279,7 @@ namespace storm {
             STORM_LOG_ASSERT(constantEntryIt == matrixInstantiated.end(), "Parametric matrix seems to have more or less entries then the constant matrix");
         }
 
-        template class DerivativeEvaluationHelper<RationalFunction, RationalNumber>;
-        template class DerivativeEvaluationHelper<RationalFunction, double>;
+        template class SparseDerivativeInstantiationModelChecker<RationalFunction, RationalNumber>;
+        template class SparseDerivativeInstantiationModelChecker<RationalFunction, double>;
     }
 }

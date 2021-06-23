@@ -26,7 +26,7 @@
 #include "storm-pars/api/storm-pars.h"
 #include "storm-pars/transformer/SparseParametricDtmcSimplifier.h"
 #include "storm-pars/analysis/OrderExtender.h"
-#include "storm-pars/derivative/DerivativeEvaluationHelper.h"
+#include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
 
 namespace {
     class RationalGmmxxEnvironment {
@@ -70,7 +70,7 @@ namespace {
         }
     };
     template<typename TestType>
-    class DerivativeEvaluationHelperTest : public ::testing::Test {
+    class SparseDerivativeInstantiationModelCheckerTest : public ::testing::Test {
     public:
         typedef typename TestType::ValueType ValueType;
         typedef typename TestType::ConstantType ConstantType;
@@ -82,7 +82,7 @@ namespace {
         using Instantiation = std::map<VariableType<storm::RationalFunction>, CoefficientType<storm::RationalFunction>>;
         template<typename ValueType>
         using ResultMap = std::map<VariableType<storm::RationalFunction>, ConstantType>;
-        DerivativeEvaluationHelperTest() : _environment(TestType::createEnvironment()) {}
+        SparseDerivativeInstantiationModelCheckerTest() : _environment(TestType::createEnvironment()) {}
         storm::Environment const& env() const { return _environment; }
         virtual void SetUp() { carl::VariablePool::getInstance().clear(); }
         virtual void TearDown() { carl::VariablePool::getInstance().clear(); }
@@ -100,11 +100,11 @@ namespace {
     > TestingTypes;
 }
 
-TYPED_TEST_SUITE(DerivativeEvaluationHelperTest, TestingTypes, );
+TYPED_TEST_SUITE(SparseDerivativeInstantiationModelCheckerTest, TestingTypes, );
 
 
 template<typename TestType>
-std::vector<typename TestType::ConstantType> DerivativeEvaluationHelperTest<TestType>::calculateProbability(
+std::vector<typename TestType::ConstantType> SparseDerivativeInstantiationModelCheckerTest<TestType>::calculateProbability(
         std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> model,
         std::shared_ptr<const storm::logic::Formula> formulaWithoutBound,
         const std::map<VariableType<ValueType>, CoefficientType<ValueType>> &substitutions) {
@@ -117,7 +117,7 @@ std::vector<typename TestType::ConstantType> DerivativeEvaluationHelperTest<Test
 }
 
 template<typename TestType>
-void DerivativeEvaluationHelperTest<TestType>::testModel(std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> dtmc, std::vector<std::shared_ptr<const storm::logic::Formula>> formulas, storm::RationalFunction reachabilityFunction) {
+void SparseDerivativeInstantiationModelCheckerTest<TestType>::testModel(std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> dtmc, std::vector<std::shared_ptr<const storm::logic::Formula>> formulas, storm::RationalFunction reachabilityFunction) {
     uint_fast64_t initialState;           
     const storm::storage::BitVector initialVector = dtmc->getStates("init");
     for (uint_fast64_t x : initialVector) {
@@ -129,7 +129,7 @@ void DerivativeEvaluationHelperTest<TestType>::testModel(std::shared_ptr<storm::
             formulas[0]->asProbabilityOperatorFormula().getSubformula().asSharedPointer(), storm::logic::OperatorInformation(boost::none, boost::none));
 
     auto parameters = storm::models::sparse::getProbabilityParameters(*dtmc);
-    storm::derivative::DerivativeEvaluationHelper<storm::RationalFunction, typename TestType::ConstantType> helper(env(), dtmc, parameters, formulas);
+    storm::derivative::SparseDerivativeInstantiationModelChecker<storm::RationalFunction, typename TestType::ConstantType> helper(env(), dtmc, parameters, formulas);
 
     std::map<VariableType<storm::RationalFunction>, storm::RationalFunction> derivatives;
     for (auto const& parameter : parameters) {
@@ -181,7 +181,7 @@ void DerivativeEvaluationHelperTest<TestType>::testModel(std::shared_ptr<storm::
 }
 
 // A very simple DTMC
-TYPED_TEST(DerivativeEvaluationHelperTest, Simple) {
+TYPED_TEST(SparseDerivativeInstantiationModelCheckerTest, Simple) {
     std::string programFile = STORM_TEST_RESOURCES_DIR "/pdtmc/gradient1.pm";
     std::string formulaAsString = "Pmax=? [F s=2]";
     std::string constantsAsString = ""; //e.g. pL=0.9,TOACK=0.5
@@ -212,7 +212,7 @@ TYPED_TEST(DerivativeEvaluationHelperTest, Simple) {
 }
 
 // A very simple DTMC with two parameters
-TYPED_TEST(DerivativeEvaluationHelperTest, Simple2) {
+TYPED_TEST(SparseDerivativeInstantiationModelCheckerTest, Simple2) {
     std::string programFile = STORM_TEST_RESOURCES_DIR "/pdtmc/gradient2.pm";
     std::string formulaAsString = "Pmax=? [F s=2]";
     std::string constantsAsString = ""; //e.g. pL=0.9,TOACK=0.5
@@ -247,7 +247,7 @@ TYPED_TEST(DerivativeEvaluationHelperTest, Simple2) {
 }
 
 // The bounded retransmission protocol
-TYPED_TEST(DerivativeEvaluationHelperTest, Brp162) {
+TYPED_TEST(SparseDerivativeInstantiationModelCheckerTest, Brp162) {
     std::string programFile = STORM_TEST_RESOURCES_DIR "/pdtmc/brp16_2.pm";
     std::string formulaAsString = "Pmax=? [F s=4 & i=N ]";
     std::string constantsAsString = ""; //e.g. pL=0.9,TOACK=0.5
