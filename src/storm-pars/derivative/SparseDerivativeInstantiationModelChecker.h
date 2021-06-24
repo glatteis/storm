@@ -4,89 +4,72 @@
 #include <map>
 #include "analysis/GraphConditions.h"
 #include "logic/Formula.h"
+#include "modelchecker/CheckTask.h"
 #include "solver/LinearEquationSolver.h"
 #include "storm-pars/utility/parametric.h"
 #include "storm/models/sparse/Dtmc.h"
 #include "storm/utility/Stopwatch.h"
-#include "storm-pars/derivative/ResultType.h"
+#include "storm/modelchecker/results/CheckResult.h"
 
 namespace storm {
     namespace derivative {
-        template <typename ValueType, typename ConstantType>
+        template <typename FunctionType, typename ConstantType>
         class SparseDerivativeInstantiationModelChecker {
         public:
             /**
-             * Computes the derivative of the reachability probability or the derivative of the expected reward of a given Dtmc at an instantiation
-             * @param env The environment. Always pass the same environment to the calculateDerivative call!
-             * @param model The Dtmc to compute the derivatives of. This must have _one_
-             * target state labeled "target" and _one_ initial state labeled "init". Note this is exactly the
-             * kind of Dtmc the SparseParametricDtmcSimplifier spits out.
-             * The constructor will setup the matrices used for computing the derivatives. Note this can consume
-             * a substantial amount of memory if the model is big and there's a large number of parameters.
-             * @param parameters The Dtmc's parameters. See storm::models::sparse::getAllParameters
-             * @param formulas The first element of this is considered, which needs to be an eventually formula.
-             * @param mode The SparseDerivativeInstantiationModelChecker's mode, whether it should compute the derivative of a probability
-             * or the derivative of an expected reward.
-             * @param rewardModelName When computing an expected reward, the name of the reward model in the Dtmc.
+             * Instantiates a new SparseDerivativeInstantiationModelChecker.
+             * @param model The Dtmc to compute the derivatives of.
              */
-            SparseDerivativeInstantiationModelChecker<ValueType, ConstantType>(
-                    Environment const& env,
-                    std::shared_ptr<storm::models::sparse::Dtmc<ValueType>> const model,
-                    std::set<typename utility::parametric::VariableType<ValueType>::type> const& parameters,
-                    std::vector<std::shared_ptr<storm::logic::Formula const>> const& formulas,
-                    ResultType mode = ResultType::PROBABILITY,
-                    boost::optional<std::string> rewardModelName = boost::none
-                ) : model(model), mode(mode), rewardModelName(rewardModelName) {
-                setup(env, parameters, formulas);
+            SparseDerivativeInstantiationModelChecker(storm::models::sparse::Dtmc<FunctionType> const& model) : model(model) {
+                // Intentionally left empty.
             }
+            virtual ~SparseDerivativeInstantiationModelChecker() = default;
+
             /**
-             * calculateDerivative calculates the deriative of the model w.r.t. a parameter at an instantiation
-             * @param env The environment. Always pass the same environment as the constructor!
-             * @param parameter The parameter w.r.t. the derivivative will be computed
-             * @param substitutions The instantiation at which the derivivative will be computed.
-             * @param valueVector A vector of reachability probabilities or expected rewards of eventually reaching the model's
-             * target (which must have the label "target", see constructor) from the initial state (labeled with "init")
-             * which must previously be computed by the user,
-             * for instance using the SparseDtmcInstantiationModelChecker. This vector must have exactly as many elements as the
-             * model has states, and of course the ith element of the vector is the reachability probability of the ith state.
+             * specifyFormula specifies a CheckTask.
+             * The SparseDerivativeInstantiationModelChecker will need to setup the matrices for it.
+             * Note this can consume a substantial amount of memory if the model is big and there's a large number of parameters.
+             * @param env The environment. Pass the same environment as to check. We need this because we need to know what kind of
+             * equation solver we are dealing with.
+             * @param checkTask The CheckTask.
              */
-            ConstantType calculateDerivative(
-                Environment const& env,
-                const typename utility::parametric::VariableType<ValueType>::type parameter,
-                const std::map<typename utility::parametric::VariableType<ValueType>::type, typename utility::parametric::CoefficientType<ValueType>::type> &substitutions,
-                const std::vector<ConstantType> valueVector
-            );
+            void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask);
+            
+            /**
+             * check calculates the deriative of the model w.r.t. a parameter at an instantiation.
+             * Call specifyFormula first!
+             * @param env The environment.
+             */
+            std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> check(Environment const& env, storm::utility::parametric::Valuation<FunctionType> const& valuation, typename utility::parametric::VariableType<FunctionType>::type const& parameter, boost::optional<std::vector<ConstantType>> const& valueVector = boost::none);
+
         private:
-            std::shared_ptr<models::sparse::Dtmc<ValueType>> model;
-            // formula is possibly without bound, but formulaWithoutBound is definitely without bound
-            std::shared_ptr<storm::logic::Formula const> formula;
-            std::shared_ptr<storm::logic::Formula const> formulaWithoutBound;
-            std::map<typename utility::parametric::VariableType<ValueType>::type, std::unique_ptr<storm::solver::LinearEquationSolver<ConstantType>>> linearEquationSolvers;
+            models::sparse::Dtmc<FunctionType> model;
+            std::unique_ptr<modelchecker::CheckTask<storm::logic::Formula, FunctionType>> currentCheckTask;
+            // store the current formula. Note that currentCheckTask only stores a reference to the formula.
+            std::shared_ptr<storm::logic::Formula const> currentFormula;
 
+            std::set<typename utility::parametric::VariableType<FunctionType>::type> parameters;
+            std::map<typename utility::parametric::VariableType<FunctionType>::type, std::unique_ptr<storm::solver::LinearEquationSolver<ConstantType>>> linearEquationSolvers;
             std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>> matrixMapping; 
-            std::unordered_map<ValueType, ConstantType> functions; 
-
-            storage::SparseMatrix<ValueType> constrainedMatrixEquationSystem;
+            std::unordered_map<FunctionType, ConstantType> functions; 
+            storage::SparseMatrix<FunctionType> constrainedMatrixEquationSystem;
             storage::SparseMatrix<ConstantType> constrainedMatrixInstantiated;
-            std::unique_ptr<std::map<typename utility::parametric::VariableType<ValueType>::type, storage::SparseMatrix<ValueType>>> deltaConstrainedMatrices;
-            std::unique_ptr<std::map<typename utility::parametric::VariableType<ValueType>::type, storage::SparseMatrix<ConstantType>>> deltaConstrainedMatricesInstantiated;
-            std::unique_ptr<std::map<typename utility::parametric::VariableType<ValueType>::type, std::vector<ValueType>>> derivedOutputVecs;
+            std::unique_ptr<std::map<typename utility::parametric::VariableType<FunctionType>::type, storage::SparseMatrix<FunctionType>>> deltaConstrainedMatrices;
+            std::unique_ptr<std::map<typename utility::parametric::VariableType<FunctionType>::type, storage::SparseMatrix<ConstantType>>> deltaConstrainedMatricesInstantiated;
+            std::unique_ptr<std::map<typename utility::parametric::VariableType<FunctionType>::type, std::vector<FunctionType>>> derivedOutputVecs;
 
             // next states: states that have a relevant successor
             storage::BitVector next;
             uint_fast64_t initialState;
 
-            ResultType mode;
-            boost::optional<std::string> rewardModelName;
-
             void initializeInstantiatedMatrix(
-                storage::SparseMatrix<ValueType> &matrix,
+                storage::SparseMatrix<FunctionType> &matrix,
                 storage::SparseMatrix<ConstantType> &matrixInstantiated
             );
             void setup(
                 Environment const& env,
-                std::set<typename utility::parametric::VariableType<ValueType>::type> const& parameters,
-                std::vector<std::shared_ptr<storm::logic::Formula const>> const& formulas);
+                modelchecker::CheckTask<storm::logic::Formula, FunctionType> const& checkTask
+            );
 
             utility::Stopwatch instantiationWatch;
             utility::Stopwatch approximationWatch;

@@ -86,7 +86,6 @@ namespace {
         storm::Environment const& env() const { return _environment; }
         virtual void SetUp() { carl::VariablePool::getInstance().clear(); }
         virtual void TearDown() { carl::VariablePool::getInstance().clear(); }
-        std::vector<typename TestType::ConstantType> calculateProbability(std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> model, std::shared_ptr<const storm::logic::Formula> formulaWithoutBound, const std::map<VariableType<ValueType>, CoefficientType<ValueType>> &substitutions);
         void testModel(std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> dtmc, std::vector<std::shared_ptr<const storm::logic::Formula>> formulas, storm::RationalFunction reachabilityFunction);
     private:
         storm::Environment _environment;
@@ -102,20 +101,6 @@ namespace {
 
 TYPED_TEST_SUITE(SparseDerivativeInstantiationModelCheckerTest, TestingTypes, );
 
-
-template<typename TestType>
-std::vector<typename TestType::ConstantType> SparseDerivativeInstantiationModelCheckerTest<TestType>::calculateProbability(
-        std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> model,
-        std::shared_ptr<const storm::logic::Formula> formulaWithoutBound,
-        const std::map<VariableType<ValueType>, CoefficientType<ValueType>> &substitutions) {
-    storm::modelchecker::SparseDtmcInstantiationModelChecker<storm::models::sparse::Dtmc<ValueType>, ConstantType> instantiationModelChecker(*model);
-    const storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask
-        = storm::modelchecker::CheckTask<storm::logic::Formula, ValueType>(*formulaWithoutBound);
-    instantiationModelChecker.specifyFormula(checkTask);
-    std::unique_ptr<storm::modelchecker::CheckResult> result = instantiationModelChecker.check(this->env(), substitutions);
-    return result->asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
-}
-
 template<typename TestType>
 void SparseDerivativeInstantiationModelCheckerTest<TestType>::testModel(std::shared_ptr<storm::models::sparse::Dtmc<storm::RationalFunction>> dtmc, std::vector<std::shared_ptr<const storm::logic::Formula>> formulas, storm::RationalFunction reachabilityFunction) {
     uint_fast64_t initialState;           
@@ -129,7 +114,7 @@ void SparseDerivativeInstantiationModelCheckerTest<TestType>::testModel(std::sha
             formulas[0]->asProbabilityOperatorFormula().getSubformula().asSharedPointer(), storm::logic::OperatorInformation(boost::none, boost::none));
 
     auto parameters = storm::models::sparse::getProbabilityParameters(*dtmc);
-    storm::derivative::SparseDerivativeInstantiationModelChecker<storm::RationalFunction, typename TestType::ConstantType> helper(env(), dtmc, parameters, formulas);
+    storm::derivative::SparseDerivativeInstantiationModelChecker<storm::RationalFunction, typename TestType::ConstantType> derivativeModelChecker(*dtmc);
 
     std::map<VariableType<storm::RationalFunction>, storm::RationalFunction> derivatives;
     for (auto const& parameter : parameters) {
@@ -165,17 +150,19 @@ void SparseDerivativeInstantiationModelCheckerTest<TestType>::testModel(std::sha
         }
         testCases[instantiation] = resultMap;
     }
+            
+    auto checkTask = storm::modelchecker::CheckTask<storm::logic::Formula, ValueType>(*formulaWithoutBound);
+    derivativeModelChecker.specifyFormula(env(), checkTask);
 
     for (auto const& testCase : testCases) {
-        auto instantiation = testCase.first;
+        Instantiation<ValueType> instantiation = testCase.first;
         for (auto const& position : instantiation) {
             auto parameter = position.first;
             auto parameterValue = position.second;
             auto expectedResult = testCase.second.at(parameter);
 
-            auto probability = this->calculateProbability(dtmc, formulaWithoutBound, instantiation);
-            auto derivative = helper.calculateDerivative(env(), parameter, instantiation, probability);
-            ASSERT_NEAR(derivative, expectedResult, 1e-6) << instantiation;
+            auto derivative = derivativeModelChecker.check(env(), instantiation, parameter);
+            ASSERT_NEAR(derivative->getValueVector()[0], expectedResult, 1e-6) << instantiation;
         }
     }
 }
