@@ -22,7 +22,9 @@ module die
 endmodule
 
 rewards "coin_flips"
-	[] s<7 : 1;
+	[] s<2 : -1;
+	[] s>=2 : -1;
+	[] s<7 : -1;
 endrewards
 
 label "one" = s=7&d=1;

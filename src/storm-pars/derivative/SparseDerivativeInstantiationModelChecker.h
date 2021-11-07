@@ -10,6 +10,7 @@
 #include "storm/models/sparse/Dtmc.h"
 #include "storm/utility/Stopwatch.h"
 #include "storm/modelchecker/results/CheckResult.h"
+#include "storm/solver/TerminationCondition.h"
 
 namespace storm {
     namespace derivative {
@@ -74,6 +75,28 @@ namespace storm {
             utility::Stopwatch instantiationWatch;
             utility::Stopwatch approximationWatch;
             utility::Stopwatch generalSetupWatch;
+        };
+
+        template<typename ValueType>
+        class SignedGradientDescentTerminationCondition : public solver::TerminationCondition<ValueType> {
+        public:
+            SignedGradientDescentTerminationCondition(uint64_t initialState) : initialState(initialState) {
+            };
+
+            bool terminateNow(std::function<ValueType(uint64_t const&)> const& valueGetter, solver::SolverGuarantee const& guarantee) const {
+                if (guarantee == solver::SolverGuarantee::GreaterOrEqual && valueGetter(initialState) > utility::convertNumber<ValueType>(1e-6)) {
+                    return true;
+                }
+                if (guarantee == solver::SolverGuarantee::LessOrEqual && valueGetter(initialState) < utility::convertNumber<ValueType>(-1e-6)) {
+                    return true;
+                }
+                return false;
+            };
+            bool requiresGuarantee(solver::SolverGuarantee const& guarantee) const {
+                return guarantee == solver::SolverGuarantee::LessOrEqual || guarantee == solver::SolverGuarantee::GreaterOrEqual;
+            }
+        private:
+            uint64_t initialState;
         };
     }
 }

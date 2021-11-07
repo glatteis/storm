@@ -29,6 +29,11 @@ namespace storm {
 								bool isFeasibleInstantiationSearchSet() const;
 
 								/*!
+								 * Retrieves whether a feasible instance should be found by Gradient Descent.
+								 */
+								bool isLiftingTestSet() const;
+
+								/*!
 								 * Retrieves whether an extremum should be found by Gradient Descent.
 								 */
                 boost::optional<std::string> getDerivativeAtInstantiation() const;
@@ -96,6 +101,7 @@ namespace storm {
                 const static std::string moduleName;
             private:
                 const static std::string extremumSearch;
+                const static std::string liftingTest;
                 const static std::string feasibleInstantiationSearch;
                 const static std::string derivativeAtInstantiation;
                 const static std::string learningRate;

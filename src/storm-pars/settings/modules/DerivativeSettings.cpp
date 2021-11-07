@@ -17,6 +17,7 @@ namespace storm {
             const std::string DerivativeSettings::moduleName = "derivative";
             const std::string DerivativeSettings::feasibleInstantiationSearch = "gradient-descent";
             const std::string DerivativeSettings::derivativeAtInstantiation = "compute-derivative";
+            const std::string DerivativeSettings::liftingTest = "lifting-test";
             const std::string DerivativeSettings::learningRate = "learning-rate";
             const std::string DerivativeSettings::miniBatchSize = "batch-size";
             const std::string DerivativeSettings::adamParams = "adam-params";
@@ -31,6 +32,7 @@ namespace storm {
 
             DerivativeSettings::DerivativeSettings() : ModuleSettings(moduleName) {
                 this->addOption(storm::settings::OptionBuilder(moduleName, feasibleInstantiationSearch, false, "Search for a feasible instantiation (restart with new instantiation while not feasible)").build());
+                this->addOption(storm::settings::OptionBuilder(moduleName, liftingTest, false, "Lifting test").build());
                 this->addOption(storm::settings::OptionBuilder(moduleName, derivativeAtInstantiation, false, "Compute the derivative at an input instantiation")
                     .addArgument(storm::settings::ArgumentBuilder::createStringArgument(derivativeAtInstantiation, "Instantiation at which the derivative should be computed").build()).build());
                 this->addOption(storm::settings::OptionBuilder(moduleName, learningRate, false, "Sets the learning rate of gradient descent")
@@ -56,6 +58,9 @@ namespace storm {
                 return this->getOption(feasibleInstantiationSearch).getHasOptionBeenSet();
             }
 
+            bool DerivativeSettings::isLiftingTestSet() const {
+                return this->getOption(liftingTest).getHasOptionBeenSet();
+            }
             boost::optional<std::string> DerivativeSettings::getDerivativeAtInstantiation() const {
                 if (this->getOption(derivativeAtInstantiation).getHasOptionBeenSet()) {
                     return this->getOption(derivativeAtInstantiation).getArgumentByName(derivativeAtInstantiation).getValueAsString();

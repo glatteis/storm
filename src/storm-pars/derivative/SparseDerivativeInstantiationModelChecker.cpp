@@ -37,7 +37,6 @@ namespace storm {
         std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::check(Environment const& env, storm::utility::parametric::Valuation<FunctionType> const& valuation, VariableType<FunctionType> const& parameter, boost::optional<std::vector<ConstantType>> const& valueVector) {
             storm::solver::GeneralLinearEquationSolverFactory<ConstantType> factory;
 
-
             std::vector<ConstantType> reachabilityProbabilities;
             if (!valueVector.is_initialized()) {
                 storm::modelchecker::SparseDtmcInstantiationModelChecker<storm::models::sparse::Dtmc<FunctionType>, ConstantType> instantiationModelChecker(model);
@@ -241,10 +240,11 @@ namespace storm {
 
             generalSetupWatch.stop();
             
-
             for (auto const& param : this->parameters) {
                 this->linearEquationSolvers[param] = factory.create(env);
                 this->linearEquationSolvers[param]->setCachingEnabled(true);
+                std::unique_ptr<solver::TerminationCondition<ConstantType>> terminationCondition = std::make_unique<SignedGradientDescentTerminationCondition<ConstantType>>(initialState);
+                this->linearEquationSolvers[param]->setTerminationCondition(std::move(terminationCondition));
             }
         }
 

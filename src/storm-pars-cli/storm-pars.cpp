@@ -7,6 +7,7 @@
 
 #include "storm-pars/derivative/GradientDescentInstantiationSearcher.h"
 #include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
+#include "storm-pars/derivative/DerivativeBoundFinder.h"
 #include "storm-pars/modelchecker/instantiation/SparseCtmcInstantiationModelChecker.h"
 #include "storm-pars/modelchecker/region/SparseParameterLiftingModelChecker.h"
 #include "storm-pars/modelchecker/region/SparseDtmcParameterLiftingModelChecker.h"
@@ -886,8 +887,19 @@ namespace storm {
         void verifyWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, SymbolicInput const& input, std::vector<storm::storage::ParameterRegion<ValueType>> const& regions, SampleInformation<ValueType> const& samples, storm::api::MonotonicitySetting monotonicitySettings = storm::api::MonotonicitySetting(), boost::optional<std::pair<std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>>>& monotoneParameters = boost::none, uint64_t monThresh = 0, boost::optional<std::set<RationalFunctionVariable>> omittedParameters = boost::none) {
             auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
             if (derSettings.isFeasibleInstantiationSearchSet() || derSettings.getDerivativeAtInstantiation()) {
-                    storm::pars::performGradientDescent<ValueType>(model, input, omittedParameters);
-                    return;
+                storm::pars::performGradientDescent<ValueType>(model, input, omittedParameters);
+                return;
+            }
+
+            if (derSettings.isLiftingTestSet()) {
+                std::vector<std::shared_ptr<storm::logic::Formula const>> formulas = storm::api::extractFormulasFromProperties(input.properties);
+                auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
+                auto formula = formulas[0];
+                auto dtmc = model->template as<storm::models::sparse::Dtmc<ValueType>>();
+                storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
+                derivative::DerivativeBoundFinder<storm::RationalFunction, double> derivativeBoundFinder(*dtmc);
+                derivativeBoundFinder.specifyFormula(Environment(), checkTask);
+                derivativeBoundFinder.liftingTest();
             }
 
             if (regions.empty()) {
