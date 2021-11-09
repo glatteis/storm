@@ -899,7 +899,7 @@ namespace storm {
                 storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
                 derivative::DerivativeBoundFinder<storm::RationalFunction, double> derivativeBoundFinder(*dtmc);
                 derivativeBoundFinder.specifyFormula(Environment(), checkTask);
-                derivativeBoundFinder.liftingTest();
+                derivativeBoundFinder.liftingTest(Environment());
             }
 
             if (regions.empty()) {
