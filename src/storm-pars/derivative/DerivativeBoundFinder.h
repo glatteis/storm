@@ -1,6 +1,7 @@
 #ifndef STORM_DERIVATIVEBOUNDFINDER_H
 #define STORM_DERIVATIVEBOUNDFINDER_H
 
+#include <queue>
 #include "environment/Environment.h"
 #include "modelchecker/CheckTask.h"
 #include "models/sparse/Dtmc.h"
@@ -50,6 +51,8 @@ class DerivativeBoundFinder {
             }
         }
     }
+
+    void derivativePLASketch(Environment const& env, typename utility::parametric::VariableType<FunctionType>::type parameter, ConstantType terminateArea);
 
     std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>,
               std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>

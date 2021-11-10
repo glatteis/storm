@@ -951,7 +951,10 @@ void verifyWithSparseEngine(
         storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
         derivative::DerivativeBoundFinder<storm::RationalFunction, double> derivativeBoundFinder(*dtmc);
         derivativeBoundFinder.specifyFormula(Environment(), checkTask);
-        derivativeBoundFinder.liftingTest(Environment());
+        for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
+            std::cout << "Doing Demo PLA w.r.t. " << parameter << std::endl;;
+            derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.01);
+        }
     }
 
     if (regions.empty()) {

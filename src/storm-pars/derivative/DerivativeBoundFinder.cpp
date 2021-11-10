@@ -1,4 +1,5 @@
 #include "DerivativeBoundFinder.h"
+#include "settings/modules/GeneralSettings.h"
 #include "storm-pars/modelchecker/instantiation/SparseDtmcInstantiationModelChecker.h"
 #include "storm-pars/utility/parametric.h"
 #include "storm-parsers/parser/FormulaParser.h"
@@ -31,8 +32,14 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
     std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
 
     for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
-        stateRewardsMax[i] = model.getUniqueRewardModel().getStateRewardVector()[i];
-        stateRewardsMin[i] = model.getUniqueRewardModel().getStateRewardVector()[i];
+        if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
+            auto rewardModel = currentCheckTaskNoBound->getFormula().asRewardOperatorFormula().getRewardModelName();
+            stateRewardsMax[i] = model.getRewardModel(rewardModel).getStateRewardVector()[i];
+            stateRewardsMin[i] = model.getRewardModel(rewardModel).getStateRewardVector()[i];
+        } else {
+            stateRewardsMax[i] = utility::zero<FunctionType>();
+            stateRewardsMin[i] = utility::zero<FunctionType>();
+        }
 
         for (auto const& entry : transitionMatrix.getRow(i)) {
             ConstantType derivative = utility::convertNumber<ConstantType>(entry.getValue().derivative(parameter));
@@ -103,11 +110,78 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
         break;
     }
 
-    std::cout << "max at init: " << derivativeMax[initialState] << std::endl;
-    std::cout << "min at init: " << derivativeMin[initialState] << std::endl;
+    /* std::cout << "max at init: " << derivativeMax[initialState] << std::endl; */
+    /* std::cout << "min at init: " << derivativeMin[initialState] << std::endl; */
 
     auto resultMax = std::make_unique<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>>(derivativeMax);
     auto resultMin = std::make_unique<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>>(derivativeMin);
+
+    return std::make_pair(std::move(resultMax), std::move(resultMin));
+}
+
+template<typename FunctionType, typename ConstantType>
+void DerivativeBoundFinder<FunctionType, ConstantType>::derivativePLASketch(Environment const& env, VariableType<FunctionType> wrt, ConstantType terminateArea) {
+    STORM_LOG_INFO("Demo derivative PLA w.r.t. " << wrt);
+    auto positivelyMonotoneArea = storm::utility::zero<ConstantType>();
+    auto negativelyMonotoneArea = storm::utility::zero<ConstantType>();
+    auto unknownArea = storm::utility::zero<ConstantType>();
+    std::vector<storage::ParameterRegion<FunctionType>> positivelyMonotoneRegions;
+    std::vector<storage::ParameterRegion<FunctionType>> negativelyMonotoneRegions;
+    std::vector<storage::ParameterRegion<FunctionType>> unknownRegions;
+    uint_fast64_t initialState;
+    const storm::storage::BitVector initialVector = model.getInitialStates();
+    for (uint_fast64_t x : initialVector) {
+        initialState = x;
+        break;
+    }
+    const ConstantType precision =
+        utility::convertNumber<ConstantType>(storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision());
+    std::queue<storage::ParameterRegion<FunctionType>> regionQueue;
+    // Make big region 
+    std::map<VariableType<FunctionType>, CoefficientType<FunctionType>> bigLower;
+    std::map<VariableType<FunctionType>, CoefficientType<FunctionType>> bigUpper;
+    for (auto const& parameter : storm::models::sparse::getAllParameters(model)) {
+        bigLower[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(1e-6);
+        bigUpper[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(1 - 1e-6);
+    }
+    storage::ParameterRegion<FunctionType> bigRegion(bigLower, bigUpper);
+
+    regionQueue.push(bigRegion);
+    while (!regionQueue.empty()) {
+        storage::ParameterRegion<FunctionType> currRegion = regionQueue.front();
+        regionQueue.pop();
+        STORM_LOG_INFO("Looking at region: " << currRegion);
+        auto results = getDerivativeBound(env, currRegion, wrt);
+        auto resultMax = std::move(results.first)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+        auto resultMin = std::move(results.second->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector());
+        if (resultMin[initialState] > precision) {
+            STORM_LOG_INFO("Found positively monotone region " << currRegion);
+            positivelyMonotoneArea += utility::convertNumber<ConstantType>(currRegion.area());
+            positivelyMonotoneRegions.push_back(currRegion);
+        } else if (resultMax[initialState] < -precision) {
+            STORM_LOG_INFO("Found negatively monotone region " << currRegion);
+            negativelyMonotoneArea += utility::convertNumber<ConstantType>(currRegion.area());
+            negativelyMonotoneRegions.push_back(currRegion);
+        } else {
+            STORM_LOG_INFO("Splitting region " << currRegion);
+            std::vector<storm::storage::ParameterRegion<FunctionType>> newRegions;
+            currRegion.split(currRegion.getCenterPoint(), newRegions);
+            for (auto const& region : newRegions) {
+                if (utility::convertNumber<ConstantType>(region.area()) > terminateArea) {
+                    regionQueue.emplace(region);
+                } else {
+                    unknownRegions.push_back(region);
+                    unknownArea += utility::convertNumber<ConstantType>(region.area());
+                }
+            }
+        }
+        STORM_LOG_INFO("Positively monotone area: " << positivelyMonotoneArea);
+        STORM_LOG_INFO("Negatively monotone area: " << negativelyMonotoneArea);
+    }
+
+    std::cout << "Positively monotone area: " << positivelyMonotoneArea << std::endl;
+    std::cout << "Negatively monotone area: " << negativelyMonotoneArea << std::endl;
+    std::cout << "Unknown area: " << unknownArea << std::endl;
 }
 
 template class DerivativeBoundFinder<RationalFunction, RationalNumber>;
