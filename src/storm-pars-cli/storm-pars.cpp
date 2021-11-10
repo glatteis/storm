@@ -948,6 +948,7 @@ void verifyWithSparseEngine(
         auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
         auto formula = formulas[0];
         auto dtmc = model->template as<storm::models::sparse::Dtmc<ValueType>>();
+        dtmc->reduceToStateBasedRewards();
         storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
         derivative::DerivativeBoundFinder<storm::RationalFunction, double> derivativeBoundFinder(*dtmc);
         derivativeBoundFinder.specifyFormula(Environment(), checkTask);

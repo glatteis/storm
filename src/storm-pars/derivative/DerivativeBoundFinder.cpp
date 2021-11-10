@@ -33,18 +33,24 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
 
     for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
         if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
-            auto rewardModel = currentCheckTaskNoBound->getFormula().asRewardOperatorFormula().getRewardModelName();
-            stateRewardsMax[i] = model.getRewardModel(rewardModel).getStateRewardVector()[i];
-            stateRewardsMin[i] = model.getRewardModel(rewardModel).getStateRewardVector()[i];
+            if (currentCheckTaskNoBound->isRewardModelSet()) {
+                stateRewardsMax[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i];
+                stateRewardsMin[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i];
+            } else {
+                stateRewardsMax[i] = model.getRewardModel("").getStateRewardVector()[i];
+                stateRewardsMin[i] = model.getRewardModel("").getStateRewardVector()[i];
+            }
         } else {
             stateRewardsMax[i] = utility::zero<FunctionType>();
             stateRewardsMin[i] = utility::zero<FunctionType>();
         }
 
         for (auto const& entry : transitionMatrix.getRow(i)) {
+            if (!entry.getValue().derivative(parameter).isConstant()) {
+                STORM_LOG_ERROR("Non-simple models not supported. This model has a transition with derivative " << entry.getValue().derivative(parameter));
+            }
             ConstantType derivative = utility::convertNumber<ConstantType>(entry.getValue().derivative(parameter));
             uint_fast64_t toState = entry.getColumn();
-            /* std::cout << entry << " , " << parameter << " , " << derivative << std::endl; */
             if (derivative != utility::zero<ConstantType>()) {
                 ConstantType extremalValueMin = 0;
                 ConstantType extremalValueMax = 0;
