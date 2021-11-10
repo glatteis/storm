@@ -4,88 +4,113 @@
 #include "storm-parsers/parser/FormulaParser.h"
 
 namespace storm {
-    namespace derivative {
+namespace derivative {
 
-        template<typename FunctionType>
-        using VariableType = typename utility::parametric::VariableType<FunctionType>::type;
-        template<typename FunctionType>
-        using CoefficientType = typename utility::parametric::CoefficientType<FunctionType>::type;
-            
-        template<typename FunctionType, typename ConstantType>
-        void DerivativeBoundFinder<FunctionType, ConstantType>::liftingTest(Environment const& env) {
-            std::map<VariableType<FunctionType>, CoefficientType<FunctionType>> lower;
-            std::map<VariableType<FunctionType>, CoefficientType<FunctionType>> upper;
-            carl::Variable parameter;
-            for (VariableType<FunctionType> loopParam : storm::models::sparse::getAllParameters(model)) {
-                lower[loopParam] = storm::utility::convertNumber<CoefficientType<FunctionType>>(0.1);
-                upper[loopParam] = storm::utility::convertNumber<CoefficientType<FunctionType>>(0.9);
-                parameter = loopParam;
-            }
+template<typename FunctionType>
+using VariableType = typename utility::parametric::VariableType<FunctionType>::type;
+template<typename FunctionType>
+using CoefficientType = typename utility::parametric::CoefficientType<FunctionType>::type;
 
-            storage::ParameterRegion<FunctionType> region(lower, upper);
+template<typename FunctionType, typename ConstantType>
+std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>,
+          std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>
+DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region,
+                                                                      VariableType<FunctionType> parameter) {
+    this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(model), *this->currentCheckTaskNoBound);
+    std::vector<ConstantType> min = liftingModelChecker->getBound(env, region, OptimizationDirection::Minimize, nullptr)
+                                        ->template asExplicitQuantitativeCheckResult<ConstantType>()
+                                        .getValueVector();
+    std::vector<ConstantType> max = liftingModelChecker->getBound(env, region, OptimizationDirection::Maximize, nullptr)
+                                        ->template asExplicitQuantitativeCheckResult<ConstantType>()
+                                        .getValueVector();
 
-            this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(model), *this->currentCheckTaskNoBound);
-            auto min = liftingModelChecker->getBound(env, region, OptimizationDirection::Minimize)->template asExplicitQuantitativeCheckResult<ConstantType>();
-            auto max = liftingModelChecker->getBound(env, region, OptimizationDirection::Maximize)->template asExplicitQuantitativeCheckResult<ConstantType>();
+    const storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
+    models::sparse::Dtmc<FunctionType> modelCopy = model;
 
-            std::cout << "w.r.t. " << parameter << std::endl;
-            const storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
-            models::sparse::Dtmc<FunctionType> modelCopy = model;
+    std::vector<FunctionType> stateRewardsMax(transitionMatrix.getRowCount());
+    std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
 
-            std::vector<FunctionType> stateRewardsMax(transitionMatrix.getRowCount());
-            std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
+    for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
+        stateRewardsMax[i] = model.getUniqueRewardModel().getStateRewardVector()[i];
+        stateRewardsMin[i] = model.getUniqueRewardModel().getStateRewardVector()[i];
 
-            for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
-                for (storage::MatrixEntry<uint_fast64_t, FunctionType> const& entry : transitionMatrix.getRow(i)) {
-                    FunctionType derivative = entry.getValue().derivative(parameter);
-                    if (derivative != utility::zero<FunctionType>()) {
-                        ConstantType derivative = utility::convertNumber<ConstantType>(derivative);
-                        ConstantType extremalValueMin = 0;
-                        ConstantType extremalValueMax = 0;
-                        if (derivative < 0) {
-                            extremalValueMax = min[i];
-                            extremalValueMin = max[i];
-                        } else if (derivative > 0) {
-                            extremalValueMax = max[i];
-                            extremalValueMin = min[i];
-                        }
-                        // TODO only works for probs
-                        stateRewardsMax[i] = utility::convertNumber<FunctionType>(derivative) * utility::convertNumber<FunctionType>(extremalValueMax);
-                        stateRewardsMin[i] = utility::convertNumber<FunctionType>(derivative) * utility::convertNumber<FunctionType>(extremalValueMin);
-                    }
+        for (auto const& entry : transitionMatrix.getRow(i)) {
+            ConstantType derivative = utility::convertNumber<ConstantType>(entry.getValue().derivative(parameter));
+            uint_fast64_t toState = entry.getColumn();
+            /* std::cout << entry << " , " << parameter << " , " << derivative << std::endl; */
+            if (derivative != utility::zero<ConstantType>()) {
+                ConstantType extremalValueMin = 0;
+                ConstantType extremalValueMax = 0;
+                if (derivative < utility::zero<ConstantType>()) {
+                    extremalValueMax = min[toState];
+                    extremalValueMin = max[toState];
+                } else if (derivative > utility::zero<ConstantType>()) {
+                    extremalValueMax = max[toState];
+                    extremalValueMin = min[toState];
                 }
+
+                stateRewardsMax[i] += FunctionType(utility::convertNumber<CoefficientType<FunctionType>>((ConstantType)(derivative * extremalValueMax)));
+                stateRewardsMin[i] += FunctionType(utility::convertNumber<CoefficientType<FunctionType>>((ConstantType)(derivative * extremalValueMin)));
             }
-
-            models::sparse::StandardRewardModel<FunctionType> rewardModelMax(std::move(stateRewardsMax));
-            models::sparse::StandardRewardModel<FunctionType> rewardModelMin(std::move(stateRewardsMin));
-
-            modelCopy.addRewardModel("derivative-max", rewardModelMax);
-            modelCopy.addRewardModel("derivative-min", rewardModelMin);
-            
-            /* std::shared_ptr<const storm::logic::Formula> formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(this->subformula, std::string("derivative-max"), this->formulaOperatorInformation, logic::RewardMeasureType::Expectation)->asRewardOperatorFormula().asSharedPointer(); */
-            auto formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(this->subformula, std::string("derivative-max"), this->formulaOperatorInformation);
-            auto formulaMin = std::make_shared<storm::logic::RewardOperatorFormula>(this->subformula, std::string("derivative-min"), this->formulaOperatorInformation);
-            auto checkTaskMin = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
-            auto checkTaskMax = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
-            std::cout << checkTaskMax->getFormula().isInFragment(storm::logic::reachability().setRewardOperatorsAllowed(true).setReachabilityRewardFormulasAllowed(true).setBoundedUntilFormulasAllowed(true).setCumulativeRewardFormulasAllowed(true).setStepBoundedCumulativeRewardFormulasAllowed(true).setTimeBoundedCumulativeRewardFormulasAllowed(true).setTimeBoundedUntilFormulasAllowed(true).setStepBoundedUntilFormulasAllowed(true).setTimeBoundedUntilFormulasAllowed(true)) << std::endl;
-
-            std::cout << this->currentCheckTaskNoBound->getFormula() << std::endl;
-            std::cout << modelCopy.getTransitionMatrix() << std::endl;
-
-            this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(modelCopy), *checkTaskMax);
-            auto derivativeMax = liftingModelChecker->getBound(env, region, OptimizationDirection::Maximize)->template asExplicitQuantitativeCheckResult<ConstantType>();
-            ConstantType derMaxAtInit = (derivativeMax)[model.getInitialStates()[0]];
-            std::cout << "derivative max: " << derMaxAtInit << std::endl;
-
-            this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(modelCopy), *checkTaskMin);
-            auto derivativeMin = liftingModelChecker->getBound(env, region, OptimizationDirection::Minimize)->template asExplicitQuantitativeCheckResult<ConstantType>();
-
-            ConstantType derMinAtInit = (derivativeMin)[model.getInitialStates()[0]];
-
-            std::cout << "derivative min: " << derMinAtInit << std::endl;
         }
+    }
 
-        template class DerivativeBoundFinder<RationalFunction, RationalNumber>;
-        template class DerivativeBoundFinder<RationalFunction, double>;
-		}
+    models::sparse::StandardRewardModel<FunctionType> rewardModelMax(std::move(stateRewardsMax));
+    models::sparse::StandardRewardModel<FunctionType> rewardModelMin(std::move(stateRewardsMin));
+
+    modelCopy.addRewardModel("derivative-max", rewardModelMax);
+    modelCopy.addRewardModel("derivative-min", rewardModelMin);
+
+    storage::BitVector target = modelCopy.getStates("target");
+    storm::storage::BitVector probZero =
+        storm::utility::graph::performProbGreater0(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
+    probZero.complement();
+    storm::storage::BitVector probOne =
+        storm::utility::graph::performProb1(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
+
+    storm::storage::BitVector newTarget(probZero.size());
+    newTarget |= probZero;
+    newTarget |= probOne;
+
+    modelCopy.getStateLabeling().addLabel("derivative-target");
+    modelCopy.getStateLabeling().setStates("derivative-target", newTarget);
+
+    auto subformulaConstructor = std::make_shared<logic::AtomicLabelFormula>("derivative-target");
+    auto subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none);
+
+    /* std::shared_ptr<const storm::logic::Formula> formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(this->subformula,
+     * std::string("derivative-max"), this->formulaOperatorInformation,
+     * logic::RewardMeasureType::Expectation)->asRewardOperatorFormula().asSharedPointer(); */
+    auto formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-max"), this->formulaOperatorInformation);
+    auto formulaMin = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-min"), this->formulaOperatorInformation);
+    auto checkTaskMin = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
+    auto checkTaskMax = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
+
+    this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(modelCopy), *checkTaskMax);
+    auto derivativeMax = liftingModelChecker->getBound(env, region, OptimizationDirection::Maximize)
+                             ->template asExplicitQuantitativeCheckResult<ConstantType>()
+                             .getValueVector();
+
+    this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(modelCopy), *checkTaskMin);
+    auto derivativeMin = liftingModelChecker->getBound(env, region, OptimizationDirection::Minimize)
+                             ->template asExplicitQuantitativeCheckResult<ConstantType>()
+                             .getValueVector();
+
+    uint_fast64_t initialState;
+    const storm::storage::BitVector initialVector = model.getInitialStates();
+    for (uint_fast64_t x : initialVector) {
+        initialState = x;
+        break;
+    }
+
+    std::cout << "max at init: " << derivativeMax[initialState] << std::endl;
+    std::cout << "min at init: " << derivativeMin[initialState] << std::endl;
+
+    auto resultMax = std::make_unique<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>>(derivativeMax);
+    auto resultMin = std::make_unique<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>>(derivativeMin);
 }
+
+template class DerivativeBoundFinder<RationalFunction, RationalNumber>;
+template class DerivativeBoundFinder<RationalFunction, double>;
+}  // namespace derivative
+}  // namespace storm
