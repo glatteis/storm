@@ -147,7 +147,9 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::derivativePLASketch(Envi
     storage::ParameterRegion<FunctionType> bigRegion(bigLower, bigUpper);
 
     regionQueue.push(bigRegion);
-    while (!regionQueue.empty()) {
+    uint_fast64_t regionsComputed = 0;
+    while (!regionQueue.empty() && (positivelyMonotoneArea + negativelyMonotoneArea) < 1 - terminateArea && regionsComputed < 1000) {
+        regionsComputed++;
         storage::ParameterRegion<FunctionType> currRegion = regionQueue.front();
         regionQueue.pop();
         STORM_LOG_INFO("Looking at region: " << currRegion);
@@ -155,33 +157,57 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::derivativePLASketch(Envi
         auto resultMax = std::move(results.first)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
         auto resultMin = std::move(results.second->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector());
         if (resultMin[initialState] > precision) {
+            std::cout << "+";
             STORM_LOG_INFO("Found positively monotone region " << currRegion);
             positivelyMonotoneArea += utility::convertNumber<ConstantType>(currRegion.area());
             positivelyMonotoneRegions.push_back(currRegion);
         } else if (resultMax[initialState] < -precision) {
+            std::cout << "-";
             STORM_LOG_INFO("Found negatively monotone region " << currRegion);
             negativelyMonotoneArea += utility::convertNumber<ConstantType>(currRegion.area());
             negativelyMonotoneRegions.push_back(currRegion);
         } else {
+            std::cout << "?";
             STORM_LOG_INFO("Splitting region " << currRegion);
             std::vector<storm::storage::ParameterRegion<FunctionType>> newRegions;
             currRegion.split(currRegion.getCenterPoint(), newRegions);
             for (auto const& region : newRegions) {
-                if (utility::convertNumber<ConstantType>(region.area()) > terminateArea) {
-                    regionQueue.emplace(region);
-                } else {
-                    unknownRegions.push_back(region);
-                    unknownArea += utility::convertNumber<ConstantType>(region.area());
-                }
+                regionQueue.emplace(region);
             }
         }
+        std::cout << std::flush;
         STORM_LOG_INFO("Positively monotone area: " << positivelyMonotoneArea);
         STORM_LOG_INFO("Negatively monotone area: " << negativelyMonotoneArea);
+    }
+    std::cout << std::endl;
+
+    while (!regionQueue.empty()) {
+        auto region = regionQueue.front();
+        regionQueue.pop();
+        unknownRegions.push_back(region);
+        unknownArea += utility::convertNumber<ConstantType>(region.area());
     }
 
     std::cout << "Positively monotone area: " << positivelyMonotoneArea << std::endl;
     std::cout << "Negatively monotone area: " << negativelyMonotoneArea << std::endl;
     std::cout << "Unknown area: " << unknownArea << std::endl;
+
+    std::vector<std::pair<storm::storage::ParameterRegion<FunctionType>, storm::modelchecker::RegionResult>> regionResults;
+
+    for (auto const& region : positivelyMonotoneRegions) {
+        regionResults.push_back(std::make_pair(region, modelchecker::RegionResult::AllSat));
+    }
+    for (auto const& region : negativelyMonotoneRegions) {
+        regionResults.push_back(std::make_pair(region, modelchecker::RegionResult::AllViolated));
+    }
+    for (auto const& region : unknownRegions) {
+        regionResults.push_back(std::make_pair(region, modelchecker::RegionResult::Unknown));
+    }
+
+    std::cout << "Quick visualization hack, AllSat means positively monotone and AllViolated means negatively monotone :-)" << std::endl;
+    modelchecker::RegionRefinementCheckResult<FunctionType> regionRefinementCheckResult(regionResults, bigRegion);
+    regionRefinementCheckResult.writeToStream(std::cout);
+    regionRefinementCheckResult.writeIllustrationToStream(std::cout);
 }
 
 template class DerivativeBoundFinder<RationalFunction, RationalNumber>;

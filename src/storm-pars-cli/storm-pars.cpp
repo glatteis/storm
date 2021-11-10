@@ -953,7 +953,8 @@ void verifyWithSparseEngine(
         derivativeBoundFinder.specifyFormula(Environment(), checkTask);
         for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
             std::cout << "Doing Demo PLA w.r.t. " << parameter << std::endl;;
-            derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.01);
+            std::cout << "(Test conditions: aborting after 95% covered or 1000 regions computed)" << std::endl;;
+            derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.05);
         }
     }
 
