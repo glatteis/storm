@@ -363,6 +363,7 @@ PreprocessResult preprocessDdModel(std::shared_ptr<storm::models::symbolic::Mode
     return result;
 }
 
+<<<<<<< HEAD
 template<storm::dd::DdType DdType, typename ValueType>
 PreprocessResult preprocessModel(std::shared_ptr<storm::models::ModelBase> const& model, SymbolicInput const& input,
                                  storm::cli::ModelProcessingInformation const& mpi) {
@@ -375,6 +376,23 @@ PreprocessResult preprocessModel(std::shared_ptr<storm::models::ModelBase> const
         STORM_LOG_ASSERT(model->isSymbolicModel(), "Unexpected model type.");
         result = storm::pars::preprocessDdModel<DdType, ValueType>(result.model->as<storm::models::symbolic::Model<DdType, ValueType>>(), input, mpi);
     }
+=======
+        template<typename ValueType>
+        void printInitialStatesResult(std::unique_ptr<storm::modelchecker::CheckResult> const &result, utility::Stopwatch *watch = nullptr, const utility::parametric::Valuation <ValueType> *valuation = nullptr) {
+            if (result) {
+                STORM_PRINT_AND_LOG("Result (initial states)");
+                if (valuation) {
+                    bool first = true;
+                    std::stringstream ss;
+                    for (auto const& entry : *valuation) {
+                        if (!first) {
+                            ss << ", ";
+                        } else {
+                            first = false;
+                        }
+                        ss << entry.first << "=" << entry.second;
+                    }
+>>>>>>> 168d6552e035bc6a5aa51aa508a29040918c4cca
 
     if (result.changed) {
         STORM_PRINT_AND_LOG(std::endl << "Time for model preprocessing: " << preprocessingWatch << "." << std::endl << std::endl);
@@ -403,6 +421,7 @@ void printInitialStatesResult(std::unique_ptr<storm::modelchecker::CheckResult> 
         }
         STORM_PRINT_AND_LOG(": ")
 
+<<<<<<< HEAD
         auto const* regionCheckResult = dynamic_cast<storm::modelchecker::RegionCheckResult<ValueType> const*>(result.get());
         if (regionCheckResult != nullptr) {
             auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
@@ -411,6 +430,17 @@ void printInitialStatesResult(std::unique_ptr<storm::modelchecker::CheckResult> 
                 regionCheckResult->writeToStream(outStream);
             } else {
                 regionCheckResult->writeCondensedToStream(outStream);
+=======
+        template<typename ValueType>
+        void verifyProperties(std::vector<storm::jani::Property> const& properties, std::function<std::unique_ptr<storm::modelchecker::CheckResult>(std::shared_ptr<storm::logic::Formula const> const& formula)> const& verificationCallback, std::function<void(std::unique_ptr<storm::modelchecker::CheckResult> const&)> const& postprocessingCallback) {
+            for (auto const& property : properties) {
+                storm::cli::printModelCheckingProperty(property);
+                storm::utility::Stopwatch watch(true);
+                std::unique_ptr<storm::modelchecker::CheckResult> result = verificationCallback(property.getRawFormula());
+                watch.stop();
+                printInitialStatesResult<ValueType>(result, &watch);
+                postprocessingCallback(result);
+>>>>>>> 168d6552e035bc6a5aa51aa508a29040918c4cca
             }
             outStream << std::endl;
             if (!regionSettings.isPrintNoIllustrationSet()) {
@@ -487,10 +517,33 @@ void verifyPropertiesAtSamplePoints(ModelType const& model, SymbolicInput const&
                 std::unique_ptr<storm::modelchecker::CheckResult> result = modelchecker.check(Environment(), valuation);
                 valuationWatch.stop();
 
+<<<<<<< HEAD
                 if (result) {
                     result->filter(storm::modelchecker::ExplicitQualitativeCheckResult(model.getInitialStates()));
                 }
                 printInitialStatesResult<ValueType>(result, property, &valuationWatch, &valuation);
+=======
+                        if (result) {
+                            result->filter(storm::modelchecker::ExplicitQualitativeCheckResult(model.getInitialStates()));
+                        }
+                        printInitialStatesResult<ValueType>(result, &valuationWatch, &valuation);
+
+                        for (uint64_t i = 0; i < parameters.size(); ++i) {
+                            ++iterators[i];
+                            if (iterators[i] == iteratorEnds[i]) {
+                                // Reset iterator and proceed to move next iterator.
+                                iterators[i] = product.at(parameters[i]).cbegin();
+
+                                // If the last iterator was removed, we are done.
+                                if (i == parameters.size() - 1) {
+                                    done = true;
+                                }
+                            } else {
+                                // If an iterator was moved but not reset, we have another valuation to check.
+                                break;
+                            }
+                        }
+>>>>>>> 168d6552e035bc6a5aa51aa508a29040918c4cca
 
                 for (uint64_t i = 0; i < parameters.size(); ++i) {
                     ++iterators[i];
@@ -954,8 +1007,8 @@ void verifyWithSparseEngine(
         derivativeBoundFinder.specifyFormula(Environment(), checkTask);
         for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
             std::cout << "Doing Demo PLA w.r.t. " << parameter << std::endl;;
-            std::cout << "(Test conditions: aborting after 99% covered or 1000 regions computed)" << std::endl;;
-            derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.01);
+            std::cout << "(Test conditions: aborting after 95% covered or 1000 regions computed)" << std::endl;;
+            derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.05);
         }
     }
 

@@ -34,11 +34,11 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
     for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
         if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
             if (currentCheckTaskNoBound->isRewardModelSet()) {
-                stateRewardsMax[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i];
-                stateRewardsMin[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i];
+                stateRewardsMax[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i].derivative(parameter);
+                stateRewardsMin[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i].derivative(parameter);
             } else {
-                stateRewardsMax[i] = model.getRewardModel("").getStateRewardVector()[i];
-                stateRewardsMin[i] = model.getRewardModel("").getStateRewardVector()[i];
+                stateRewardsMax[i] = model.getRewardModel("").getStateRewardVector()[i].derivative(parameter);
+                stateRewardsMin[i] = model.getRewardModel("").getStateRewardVector()[i].derivative(parameter);
             }
         } else {
             stateRewardsMax[i] = utility::zero<FunctionType>();
@@ -75,15 +75,20 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
     modelCopy.addRewardModel("derivative-min", rewardModelMin);
 
     storage::BitVector target = modelCopy.getStates("target");
-    storm::storage::BitVector probZero =
-        storm::utility::graph::performProbGreater0(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
-    probZero.complement();
-    storm::storage::BitVector probOne =
-        storm::utility::graph::performProb1(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
+    storm::storage::BitVector newTarget(target.size());
 
-    storm::storage::BitVector newTarget(probZero.size());
-    newTarget |= probZero;
-    newTarget |= probOne;
+    if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
+        newTarget = target;
+    } else {
+        storm::storage::BitVector probZero =
+            storm::utility::graph::performProbGreater0(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
+        probZero.complement();
+        storm::storage::BitVector probOne =
+            storm::utility::graph::performProb1(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
+
+        newTarget |= probZero;
+        newTarget |= probOne;
+    }
 
     modelCopy.getStateLabeling().addLabel("derivative-target");
     modelCopy.getStateLabeling().setStates("derivative-target", newTarget);
@@ -96,7 +101,7 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
      * logic::RewardMeasureType::Expectation)->asRewardOperatorFormula().asSharedPointer(); */
     auto formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-max"), this->formulaOperatorInformation);
     auto formulaMin = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-min"), this->formulaOperatorInformation);
-    auto checkTaskMin = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
+    auto checkTaskMin = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMin);
     auto checkTaskMax = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
 
     this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(modelCopy), *checkTaskMax);
@@ -147,8 +152,8 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::derivativePLASketch(Envi
     std::map<VariableType<FunctionType>, CoefficientType<FunctionType>> bigLower;
     std::map<VariableType<FunctionType>, CoefficientType<FunctionType>> bigUpper;
     for (auto const& parameter : storm::models::sparse::getAllParameters(model)) {
-        bigLower[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(1e-6);
-        bigUpper[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(1 - 1e-6);
+        bigLower[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(0.01);
+        bigUpper[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(0.99);
     }
     storage::ParameterRegion<FunctionType> bigRegion(bigLower, bigUpper);
 
