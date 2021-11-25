@@ -17,11 +17,17 @@ std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantT
           std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>
 DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region,
                                                                       VariableType<FunctionType> parameter) {
-    this->liftingModelChecker->specify(env, std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(model), *this->currentCheckTaskNoBound);
-    std::vector<ConstantType> min = liftingModelChecker->getBound(env, region, OptimizationDirection::Minimize, nullptr)
+    auto const sharedModelPointer = std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(model);
+    this->liftingModelChecker->specify_internal(env, sharedModelPointer, *this->currentCheckTaskNoBound, false, true);
+
+    auto modelCopyInitial = model;
+    std::vector<ConstantType> max = liftingModelChecker->check(env, region, OptimizationDirection::Maximize, nullptr)
                                         ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                         .getValueVector();
-    std::vector<ConstantType> max = liftingModelChecker->getBound(env, region, OptimizationDirection::Maximize, nullptr)
+    /* std::cout << storm::utility::vector::toString(liftingModelChecker->check(env, region, OptimizationDirection::Minimize, nullptr) */
+    /*                                     ->template asExplicitQuantitativeCheckResult<ConstantType>() */
+    /*                                     .getValueVector()) << std::endl; */
+    std::vector<ConstantType> min = liftingModelChecker->check(env, region, OptimizationDirection::Minimize, nullptr)
                                         ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                         .getValueVector();
 
@@ -31,12 +37,19 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
     std::vector<FunctionType> stateRewardsMax(transitionMatrix.getRowCount());
     std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
 
+    /* for (uint_fast64_t i = 0; i < modelCopy.getNumberOfStates(); i++) { */
+    /*     std::cout << "max" << i << ":" << max[i] << std::endl; */
+    /*     std::cout << "min" << i << ":" << min[i] << std::endl; */
+    /* } */
+
     for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
         if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
             if (currentCheckTaskNoBound->isRewardModelSet()) {
+                /* std::cout << "reward for " << i << ":" << model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i] << std::endl; */
                 stateRewardsMax[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i].derivative(parameter);
                 stateRewardsMin[i] = model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector()[i].derivative(parameter);
             } else {
+                /* std::cout << "reward for " << i << ":" << model.getRewardModel("").getStateRewardVector()[i] << std::endl; */
                 stateRewardsMax[i] = model.getRewardModel("").getStateRewardVector()[i].derivative(parameter);
                 stateRewardsMin[i] = model.getRewardModel("").getStateRewardVector()[i].derivative(parameter);
             }
@@ -68,6 +81,10 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
         }
     }
 
+    /* for (uint_fast64_t i = 0; i < modelCopy.getNumberOfStates(); i++) { */
+    /*     std::cout << "for " << i << ": " << utility::convertNumber<double>(stateRewardsMin[i]) << "<=" << utility::convertNumber<double>(stateRewardsMax[i]) << std::endl; */
+    /* } */
+
     models::sparse::StandardRewardModel<FunctionType> rewardModelMax(std::move(stateRewardsMax));
     models::sparse::StandardRewardModel<FunctionType> rewardModelMin(std::move(stateRewardsMin));
 
@@ -92,6 +109,11 @@ DerivativeBoundFinder<FunctionType, ConstantType>::getDerivativeBound(Environmen
 
     modelCopy.getStateLabeling().addLabel("derivative-target");
     modelCopy.getStateLabeling().setStates("derivative-target", newTarget);
+
+    /* modelCopy.writeDotToStream(std::cout); */
+    /* for (uint_fast64_t i = 0; i < modelCopy.getNumberOfStates(); i++) { */
+    /*     std::cout << "R" << i << ":" << rewardModelMax.getStateReward(i) << std::endl; */
+    /* } */
 
     auto subformulaConstructor = std::make_shared<logic::AtomicLabelFormula>("derivative-target");
     auto subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none);
