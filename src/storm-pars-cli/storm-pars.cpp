@@ -287,7 +287,7 @@ namespace storm {
                 result.model = storm::pars::simplifyModel<ValueType>(result.model, input);
                 result.changed = true;
             }
-            
+
             if (result.model->isOfType(storm::models::ModelType::MarkovAutomaton)) {
                 result.model = storm::cli::preprocessSparseMarkovAutomaton(result.model->template as<storm::models::sparse::MarkovAutomaton<ValueType>>());
                 result.changed = true;
@@ -309,7 +309,7 @@ namespace storm {
                 result.formulas = eliminationResult.second;
                 result.changed = true;
             }
-            
+
             if (parametricSettings.transformContinuousModel() && (model->isOfType(storm::models::ModelType::Ctmc) || model->isOfType(storm::models::ModelType::MarkovAutomaton))) {
                 auto transformResult = storm::api::transformContinuousToDiscreteTimeSparseModel(std::move(*model->template as<storm::models::sparse::Model<ValueType>>()), storm::api::extractFormulasFromProperties(input.properties));
                 result.model = transformResult.first;
@@ -329,7 +329,7 @@ namespace storm {
         template <storm::dd::DdType DdType, typename ValueType>
         PreprocessResult preprocessDdModel(std::shared_ptr<storm::models::symbolic::Model<DdType, ValueType>> const& model, SymbolicInput const& input, storm::cli::ModelProcessingInformation const& mpi) {
             auto bisimulationSettings = storm::settings::getModule<storm::settings::modules::BisimulationSettings>();
-            
+
             PreprocessResult result(model, false);
 
             if (mpi.engine == storm::utility::Engine::Hybrid) {
@@ -784,6 +784,7 @@ namespace storm {
             ValueType precision = storm::utility::convertNumber<ValueType>(regionSettings.getExtremumValuePrecision());
             bool generateSplitEstimates = regionSettings.isSplittingThresholdSet();
             for (auto const& property : input.properties) {
+                STORM_LOG_THROW(property.getRawFormula()->hasQuantitativeResult(), storm::exceptions::NotSupportedException, "Extremum cannot be computed for this type of property.");
                 for (auto const& region : regions) {
                     if (monotonicitySettings.useMonotonicity) {
                         STORM_PRINT_AND_LOG("Computing extremal value for property " << property.getName() << ": "
@@ -825,7 +826,7 @@ namespace storm {
                 }
             }
         }
-        
+
         template <typename ValueType>
         void verifyRegionsWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, SymbolicInput const& input, std::vector<storm::storage::ParameterRegion<ValueType>> const& regions, storm::api::MonotonicitySetting monotonicitySettings = storm::api::MonotonicitySetting(), uint64_t monThresh = 0) {
             STORM_LOG_ASSERT(!regions.empty(), "Can not analyze an empty set of regions.");
@@ -1063,11 +1064,11 @@ namespace storm {
         void processOptions() {
             // Start by setting some urgent options (log levels, resources, etc.)
             storm::cli::setUrgentOptions();
-            
+
             auto coreSettings = storm::settings::getModule<storm::settings::modules::CoreSettings>();
             auto engine = coreSettings.getEngine();
             STORM_LOG_WARN_COND(engine != storm::utility::Engine::Dd || engine != storm::utility::Engine::Hybrid || coreSettings.getDdLibraryType() == storm::dd::DdType::Sylvan, "The selected DD library does not support parametric models. Switching to Sylvan...");
-            
+
             // Parse and preprocess symbolic input (PRISM, JANI, properties, etc.)
             auto symbolicInput = storm::cli::parseSymbolicInput();
             storm::cli::ModelProcessingInformation mpi;

@@ -11,7 +11,7 @@
 namespace storm {
     namespace settings {
         namespace modules {
-            
+
             const std::string ParametricSettings::moduleName = "parametric";
             const std::string ParametricSettings::exportResultOptionName = "resultfile";
             const std::string ParametricSettings::derivativesOptionName = "derivatives";
@@ -37,19 +37,19 @@ namespace storm {
                 this->addOption(storm::settings::OptionBuilder(moduleName, useMonotonicityName, false, "If set, monotonicity will be used.").build());
 //                this->addOption(storm::settings::OptionBuilder(moduleName, onlyGlobalName, false, "If set, only global monotonicity will be used.").build());
             }
-            
+
             bool ParametricSettings::exportResultToFile() const {
                 return this->getOption(exportResultOptionName).getHasOptionBeenSet();
             }
-            
+
             std::string ParametricSettings::exportResultPath() const {
                 return this->getOption(exportResultOptionName).getArgumentByName("path").getValueAsString();
             }
-            
+
             bool ParametricSettings::isDerivativesSet() const {
                 return this->getOption(derivativesOptionName).getHasOptionBeenSet();
             }
-            
+
             bool ParametricSettings::transformContinuousModel() const {
                 return this->getOption(transformContinuousOptionName).getHasOptionBeenSet();
             }
@@ -57,15 +57,15 @@ namespace storm {
             bool ParametricSettings::onlyObtainConstraints() const {
                 return this->getOption(onlyWellformednessConstraintsOptionName).getHasOptionBeenSet();
             }
-            
+
             std::string ParametricSettings::getSamples() const {
                 return this->getOption(samplesOptionName).getArgumentByName("samples").getValueAsString();
             }
-            
+
             bool ParametricSettings::isSamplesAreGraphPreservingSet() const {
                 return this->getOption(samplesGraphPreservingOptionName).getHasOptionBeenSet();
             }
-            
+
             bool ParametricSettings::isSampleExactSet() const {
                 return this->getOption(sampleExactOptionName).getHasOptionBeenSet();
             }

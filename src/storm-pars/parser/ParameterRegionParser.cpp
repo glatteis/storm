@@ -98,13 +98,13 @@ namespace storm {
 
         template<typename ParametricType>
         std::vector<storm::storage::ParameterRegion<ParametricType>> ParameterRegionParser<ParametricType>::parseMultipleRegionsFromFile(std::string const& fileName, std::set<VariableType> const& consideredVariables, boost::optional<int> const& splittingThreshold) {
-     
+
             // Open file and initialize result.
             std::ifstream inputFileStream;
             storm::utility::openFile(fileName, inputFileStream);
-            
+
             std::vector<storm::storage::ParameterRegion<ParametricType>> result;
-            
+
             // Now try to parse the contents of the file.
             try {
                 std::string fileContent((std::istreambuf_iterator<char>(inputFileStream)), (std::istreambuf_iterator<char>()));
@@ -114,15 +114,14 @@ namespace storm {
                 storm::utility::closeFile(inputFileStream);
                 throw e;
             }
-            
+
             // Close the stream in case everything went smoothly and return result.
             storm::utility::closeFile(inputFileStream);
             return result;
         }
-        
+
 #ifdef STORM_HAVE_CARL
             template class ParameterRegionParser<storm::RationalFunction>;
 #endif
     }
 }
-

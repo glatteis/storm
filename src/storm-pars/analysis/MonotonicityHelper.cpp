@@ -10,15 +10,15 @@
 #include "storm/modelchecker/results/ExplicitQuantitativeCheckResult.h"
 
 #include "storm-pars/analysis/AssumptionChecker.h"
-
+#include "storm-pars/analysis/ReachabilityOrderExtenderDtmc.h"
+#include "storm-pars/analysis/ReachabilityOrderExtenderMdp.h"
 
 namespace storm {
     namespace analysis {
         /*** Constructor ***/
         template <typename ValueType, typename ConstantType>
-        MonotonicityHelper<ValueType, ConstantType>::MonotonicityHelper(std::shared_ptr<models::sparse::Model<ValueType>> model, std::vector<std::shared_ptr<logic::Formula const>> formulas, std::vector<storage::ParameterRegion<ValueType>> regions, uint_fast64_t numberOfSamples, double const& precision, bool dotOutput) : assumptionMaker(model->getTransitionMatrix()){
-            assert (model != nullptr);
-
+        MonotonicityHelper<ValueType, ConstantType>::MonotonicityHelper(std::shared_ptr<models::sparse::Model<ValueType>> model, std::vector<std::shared_ptr<logic::Formula const>> formulas, std::vector<storage::ParameterRegion<ValueType>> regions, uint_fast64_t numberOfSamples, double const& precision, bool dotOutput) : assumptionMaker(model->getTransitionMatrix()) {
+            STORM_LOG_ASSERT (model != nullptr, "Expecting model to be provided for monotonicity helper");
             this->model = model;
             this->formulas = formulas;
             this->precision = utility::convertNumber<ConstantType>(precision);
@@ -56,7 +56,14 @@ namespace storm {
                 checkSamples = false;
             }
 
-            this->extender = new analysis::OrderExtender<ValueType, ConstantType>(model, formulas[0]);
+            if (model->isOfType(models::ModelType::Dtmc)) {
+                this->extender = new analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0]);
+            } else if (model->isOfType(models::ModelType::Mdp)) {
+                // TODO where to get prMax? Based on what was given via --prop?
+                this->extender = new analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>(model, formulas[0], true);
+            } else {
+                STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Monotonicity checking not implemented for model type: ");
+            }
 
             for (uint_fast64_t i = 0; i < matrix.getRowCount(); ++i) {
                 std::set<VariableType> occurringVariables;
@@ -85,7 +92,7 @@ namespace storm {
             //output of results
             for (auto itr : monResults) {
                 if (itr.first != nullptr) {
-                    std::cout << "Number of done states: " << itr.first->getNumberOfDoneStates() << std::endl;
+                    std::cout << "Number of done states: " << itr.first->getNumberOfSufficientStates() << std::endl;
                 }
                 if (checkSamples) {
                     for (auto & entry : resultCheckOnSamples.getMonotonicityResult()) {
@@ -151,7 +158,7 @@ namespace storm {
             LocalMonotonicityResult<VariableType> localMonRes(model->getNumberOfStates());
             for (uint_fast64_t state = 0; state < model->getNumberOfStates(); ++state) {
                 for (auto& var : extender->getVariablesOccuringAtState()[state]) {
-                    localMonRes.setMonotonicity(state, var, extender->getMonotoncityChecker().checkLocalMonotonicity(order, state, var, region));
+                    localMonRes.setMonotonicity(state, var, extender->getMonotonicityChecker().checkLocalMonotonicity(order, state, var, region));
                 }
             }
             localMonRes.setDone(order->getDoneBuilding());
@@ -209,7 +216,7 @@ namespace storm {
                     monRes = std::make_shared<MonotonicityResult<VariableType>>(MonotonicityResult<VariableType>());
                     for (auto& entry : occuringStatesAtVariable) {
                         for (auto & state : entry.second) {
-                            extender->checkParOnStateMonRes(state, order, entry.first, monRes);
+                            extender->checkParOnStateMonRes(state, order, entry.first, region, monRes);
                             if (monRes->getMonotonicity(entry.first) == Monotonicity::Unknown) {
                                 break;
                             }

@@ -67,6 +67,7 @@ namespace storm {
                 uint64_t getMonotonicityThreshold() const;
 
 
+
                 const static std::string moduleName;
 
             private:

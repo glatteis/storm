@@ -18,18 +18,18 @@
 
 namespace storm {
     namespace modelchecker {
-        
+
         template <typename SparseModelType, typename ConstantType>
         SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::SparseParameterLiftingModelChecker() {
             //Intentionally left empty
         }
-        
+
         template <typename SparseModelType, typename ConstantType>
         void SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::specifyFormula(Environment const& env, storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType> const& checkTask) {
 
             currentFormula = checkTask.getFormula().asSharedPointer();
             currentCheckTask = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, ConstantType>>(checkTask.substituteFormula(*currentFormula).template convertValueType<ConstantType>());
-            
+
             if (currentCheckTask->getFormula().isProbabilityOperatorFormula()) {
                 auto const& probOpFormula = currentCheckTask->getFormula().asProbabilityOperatorFormula();
                 if(probOpFormula.getSubformula().isBoundedUntilFormula()) {
@@ -52,7 +52,7 @@ namespace storm {
                 }
             }
         }
-        
+
         template <typename SparseModelType, typename ConstantType>
         RegionResult SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::analyzeRegion(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, RegionResultHypothesis const& hypothesis, RegionResult const& initialResult, bool sampleVerticesOfRegion, std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename RegionModelChecker<typename SparseModelType::ValueType>::VariableType>> localMonotonicityResult) {
             typedef typename RegionModelChecker<typename SparseModelType::ValueType>::VariableType VariableType;
@@ -62,7 +62,7 @@ namespace storm {
             STORM_LOG_THROW(this->currentCheckTask->isOnlyInitialStatesRelevantSet(), storm::exceptions::NotSupportedException, "Analyzing regions with parameter lifting requires a property where only the value in the initial states is relevant.");
             STORM_LOG_THROW(this->currentCheckTask->isBoundSet(), storm::exceptions::NotSupportedException, "Analyzing regions with parameter lifting requires a bounded property.");
             STORM_LOG_THROW(this->parametricModel->getInitialStates().getNumberOfSetBits() == 1, storm::exceptions::NotSupportedException, "Analyzing regions with parameter lifting requires a model with a single initial state.");
-            
+
             RegionResult result = initialResult;
 
             // Check if we need to check the formula on one point to decide whether to show AllSat or AllViolated
@@ -149,18 +149,18 @@ namespace storm {
             }
             return result;
         }
-        
+
         template <typename SparseModelType, typename ConstantType>
         RegionResult SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::sampleVertices(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, RegionResult const& initialResult) {
             RegionResult result = initialResult;
-            
+
             if (result == RegionResult::AllSat || result == RegionResult::AllViolated) {
                 return result;
             }
-            
+
             bool hasSatPoint = result == RegionResult::ExistsSat || result == RegionResult::CenterSat;
             bool hasViolatedPoint = result == RegionResult::ExistsViolated || result == RegionResult::CenterViolated;
-            
+
             // Check if there is a point in the region for which the property is satisfied
             auto vertices = region.getVerticesOfRegion(region.getVariables());
             auto vertexIt = vertices.begin();
@@ -172,7 +172,7 @@ namespace storm {
                 }
                 ++vertexIt;
             }
-            
+
             if (hasSatPoint) {
                 if (hasViolatedPoint) {
                     result = RegionResult::ExistsBoth;
@@ -182,7 +182,7 @@ namespace storm {
             } else if (hasViolatedPoint && result != RegionResult::CenterViolated) {
                 result = RegionResult::ExistsViolated;
             }
-            
+
             return result;
         }
 
@@ -196,7 +196,7 @@ namespace storm {
                 return quantitativeResult->template asExplicitQuantitativeCheckResult<ConstantType>().compareAgainstBound(this->currentCheckTask->getFormula().asOperatorFormula().getComparisonType(), this->currentCheckTask->getFormula().asOperatorFormula().template getThresholdAs<ConstantType>());
             }
         }
-        
+
         template <typename SparseModelType, typename ConstantType>
         std::unique_ptr<QuantitativeCheckResult<ConstantType>> SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::getBound(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters, std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename RegionModelChecker<typename SparseModelType::ValueType>::VariableType>> localMonotonicityResult) {
             STORM_LOG_WARN_COND(this->currentCheckTask->getFormula().hasQuantitativeResult(), "Computing quantitative bounds for a qualitative formula...");
@@ -262,8 +262,7 @@ namespace storm {
                     } else {
                         initBound = maxBound[*this->parametricModel->getInitialStates().begin()];
                     }
-                    orderExtender->setMinValuesInit(minBound);
-                    orderExtender->setMaxValuesInit(maxBound);
+                    orderExtender->setMinMaxValues(minBound, maxBound);
                 }
                 auto order = this->extendOrder(nullptr, region);
                 auto monRes = std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>>(new storm::analysis::LocalMonotonicityResult<VariableType>(order->getNumberOfStates()));
@@ -372,9 +371,9 @@ namespace storm {
                                     boundsWatch.start();
                                     numberOfPLACallsBounds++;
                                     if (minimize) {
-                                        orderExtender->setMinMaxValues(order, bounds, getBound(env, currRegion, storm::solver::OptimizationDirection::Maximize, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector());
+                                        orderExtender->setMinMaxValues(bounds, getBound(env, currRegion, storm::solver::OptimizationDirection::Maximize, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector(), order);
                                     } else {
-                                        orderExtender->setMinMaxValues(order, getBound(env, currRegion, storm::solver::OptimizationDirection::Maximize, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector(), bounds);
+                                        orderExtender->setMinMaxValues(getBound(env, currRegion, storm::solver::OptimizationDirection::Maximize, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector(), bounds, order);
                                     }
                                     boundsWatch.stop();
                                 }
@@ -444,7 +443,7 @@ namespace storm {
 
             return std::make_pair(storm::utility::convertNumber<typename SparseModelType::ValueType>(value.get()), valuation);
         }
-        
+
         template <typename SparseModelType, typename ConstantType>
         std::pair<typename SparseModelType::ValueType, typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation> SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::computeExtremalValue(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, storm::solver::OptimizationDirection const& dir, typename SparseModelType::ValueType const& precision) {
             return computeExtremalValue(env, region, dir, precision, boost::none);
@@ -496,8 +495,8 @@ namespace storm {
         template<typename SparseModelType, typename ConstantType>
         std::shared_ptr<storm::analysis::Order> SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::copyOrder(std::shared_ptr<storm::analysis::Order> order) {
             auto res = order->copy();
-            if (orderExtender) {
-                orderExtender->setUnknownStates(order, res);
+            if (orderExtender != nullptr) {
+                orderExtender->copyUnknownStates(order, res);
                 orderExtender->copyMinMax(order, res);
             }
             return res;

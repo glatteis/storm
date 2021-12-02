@@ -13,7 +13,7 @@ namespace storm {
             typedef typename storm::storage::ParameterRegion<ParametricType>::VariableType VariableType;
             typedef typename storm::storage::ParameterRegion<ParametricType>::CoefficientType CoefficientType;
             typedef typename storm::storage::ParameterRegion<ParametricType>::Valuation Valuation;
-            
+
             /*
              * Parse a single parameter with its boundaries from a string of the form "0.3<=p<=0.5".
              * The results will be inserted in the given maps
@@ -33,16 +33,14 @@ namespace storm {
              *
              */
             static std::vector<storm::storage::ParameterRegion<ParametricType>> parseMultipleRegions(std::string const& regionsString, std::set<VariableType> const& consideredVariables, boost::optional<int> const& splittingThreshold = boost::none);
-            
+
 
             /*
              * Parse multiple regions from a file
              *
              */
             static std::vector<storm::storage::ParameterRegion<ParametricType>> parseMultipleRegionsFromFile(std::string const& fileName, std::set<VariableType> const& consideredVariables, boost::optional<int> const& splittingThreshold = boost::none);
-            
+
         };
     }
 }
-
-

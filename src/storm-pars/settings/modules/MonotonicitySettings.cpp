@@ -89,6 +89,7 @@ namespace storm {
             bool MonotonicitySettings::isMonSolutionSet() const {
                 return this->getOption(monSolution).getHasOptionBeenSet();
             }
+
         } // namespace modules
     } // namespace settings
 } // namespace storm

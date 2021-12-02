@@ -15,7 +15,7 @@
 namespace storm {
     namespace settings {
         namespace modules {
-            
+
             const std::string IOSettings::moduleName = "io";
             const std::string IOSettings::exportDotOptionName = "exportdot";
             const std::string IOSettings::exportDotMaxWidthOptionName = "dot-maxwidth";
@@ -48,14 +48,14 @@ namespace storm {
             const std::string IOSettings::propertyOptionName = "prop";
             const std::string IOSettings::propertyOptionShortName = "prop";
             const std::string IOSettings::steadyStateDistrOptionName = "steadystate";
-            
+
             const std::string IOSettings::qvbsInputOptionName = "qvbs";
             const std::string IOSettings::qvbsInputOptionShortName = "qvbs";
             const std::string IOSettings::qvbsRootOptionName = "qvbsroot";
             const std::string IOSettings::propertiesAsMultiOptionName = "propsasmulti";
 
             std::string preventDRNPlaceholderOptionName = "no-drn-placeholders";
-            
+
             IOSettings::IOSettings() : ModuleSettings(moduleName) {
                 this->addOption(storm::settings::OptionBuilder(moduleName, exportDotOptionName, false, "If given, the loaded model will be written to the specified file in the dot format.").setIsAdvanced()
                                 .addArgument(storm::settings::ArgumentBuilder::createStringArgument("filename", "The name of the file to which the model is to be written.").build()).build());
@@ -111,9 +111,9 @@ namespace storm {
                         .addArgument(storm::settings::ArgumentBuilder::createUnsignedIntegerArgument("instance-index", "The selected instance of this model.").setDefaultValueUnsignedInteger(0).makeOptional().build())
                         .addArgument(storm::settings::ArgumentBuilder::createStringArgument("filter", "The comma separated list of property names to check. Omit to check all, \"\" to check none.").setDefaultValueString("").makeOptional().build())
                         .build());
-                
+
                 this->addOption(storm::settings::OptionBuilder(moduleName, propertiesAsMultiOptionName, false, "If set, the selected properties are interpreted as a multi-objective formula.").setIsAdvanced().build());
-                
+
 #ifdef STORM_HAVE_QVBS
                 std::string qvbsRootDefault = STORM_QVBS_ROOT;
 #else
@@ -179,11 +179,11 @@ namespace storm {
             std::string IOSettings::getExportDdFilename() const {
                 return this->getOption(exportDdOptionName).getArgumentByName("filename").getValueAsString();
             }
-            
+
             bool IOSettings::isExportCdfSet() const {
                 return this->getOption(exportCdfOptionName).getHasOptionBeenSet();
             }
-            
+
             std::string IOSettings::getExportCdfDirectory() const {
                 std::string result = this->getOption(exportCdfOptionName).getArgumentByName("directory").getValueAsString();
                 if (result.back() != '/') {
@@ -191,11 +191,11 @@ namespace storm {
                 }
                 return result;
             }
-            
+
             bool IOSettings::isExportSchedulerSet() const {
                 return this->getOption(exportSchedulerOptionName).getHasOptionBeenSet();
             }
-            
+
             std::string IOSettings::getExportSchedulerFilename() const {
                 return this->getOption(exportSchedulerOptionName).getArgumentByName("filename").getValueAsString();
             }
@@ -315,23 +315,23 @@ namespace storm {
             std::string IOSettings::getPropertyFilter() const {
                 return this->getOption(propertyOptionName).getArgumentByName("filter").getValueAsString();
             }
-            
+
             bool IOSettings::isComputeSteadyStateDistributionSet() const {
                 return this->getOption(steadyStateDistrOptionName).getHasOptionBeenSet();
             }
-            
+
             bool IOSettings::isQvbsInputSet() const {
                 return this->getOption(qvbsInputOptionName).getHasOptionBeenSet();
             }
-            
+
             std::string IOSettings::getQvbsModelName() const {
                 return this->getOption(qvbsInputOptionName).getArgumentByName("model").getValueAsString();
             }
-            
+
             uint64_t IOSettings::getQvbsInstanceIndex() const {
                 return this->getOption(qvbsInputOptionName).getArgumentByName("instance-index").getValueAsUnsignedInteger();
             }
-            
+
             boost::optional<std::vector<std::string>> IOSettings::getQvbsPropertyFilter() const {
                 std::string listAsString = this->getOption(qvbsInputOptionName).getArgumentByName("filter").getValueAsString();
                 if (listAsString == "") {
@@ -344,7 +344,7 @@ namespace storm {
                     return storm::parser::parseCommaSeperatedValues(listAsString);
                 }
             }
-            
+
             std::string IOSettings::getQvbsRoot() const {
                 auto const& path = this->getOption(qvbsRootOptionName).getArgumentByName("path");
 #ifndef STORM_HAVE_QVBS
@@ -352,11 +352,11 @@ namespace storm {
 #endif
                 return path.getValueAsString();
             }
-            
+
             bool IOSettings::isPropertiesAsMultiSet() const {
                 return this->getOption(propertiesAsMultiOptionName).getHasOptionBeenSet();
             }
-            
+
 			void IOSettings::finalize() {
                 STORM_LOG_WARN_COND(!isExportDdSet(), "Option '--" << moduleName << ":" << exportDdOptionName << "' is depreciated. Use '--" << moduleName << ":" << exportBuildOptionName << "' instead.");
                 STORM_LOG_WARN_COND(!isExportDotSet(), "Option '--" << moduleName << ":" << exportDotOptionName << "' is depreciated. Use '--" << moduleName << ":" << exportBuildOptionName << "' instead.");
@@ -379,10 +379,10 @@ namespace storm {
 
                 // Ensure that the model was given either symbolically or explicitly.
                 STORM_LOG_THROW(numSymbolicInputs + numExplicitInputs <= 1, storm::exceptions::InvalidSettingsException, "The model may be either given in an explicit or a symbolic format (PRISM or JANI), but not both.");
-                
+
                 // Make sure PRISM-to-JANI conversion is only set if the actual input is in PRISM format.
                 STORM_LOG_THROW(!isPrismToJaniSet() || isPrismInputSet(), storm::exceptions::InvalidSettingsException, "For the transformation from PRISM to JANI, the input model must be given in the prism format.");
-                
+
                 return true;
             }
 

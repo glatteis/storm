@@ -79,7 +79,7 @@ namespace storm {
                  * @return True if the export-to-explicit option was set
                  */
                 bool isExportExplicitSet() const;
-                
+
                 /*!
                  * Retrieves the name in which to write the model in explicit format, if the option was set.
                  *
@@ -105,17 +105,17 @@ namespace storm {
                  * Retrieves whether the cumulative density function for reward bounded properties should be exported
                  */
                 bool isExportCdfSet() const;
-                
+
                 /*!
                  * Retrieves a path to a directory in which the cdf files will be stored
                  */
                  std::string getExportCdfDirectory() const;
-                
+
                 /*!
                  * Retrieves whether an optimal scheduler is to be exported
                  */
                 bool isExportSchedulerSet() const;
-                
+
                 /*!
                  * Retrieves a filename to which an optimal scheduler will be exported.
                  */
@@ -173,7 +173,7 @@ namespace storm {
                  * @return
                  */
                 bool isExplicitExportPlaceholdersDisabled() const;
-                
+
                 /*!
                  * Retrieves whether the explicit option with IMCA was set.
                  *
@@ -194,7 +194,7 @@ namespace storm {
                  * @return True if the PRISM input option was set.
                  */
                 bool isPrismInputSet() const;
-                
+
                 /*!
                  * Retrieves whether the JANI input option was set.
                  *
@@ -208,14 +208,14 @@ namespace storm {
                  * @return True if either of the two options was set.
                  */
                 bool isPrismOrJaniInputSet() const;
-                
+
                 /*!
                  * Retrieves whether the option to convert PRISM to JANI input was set.
                  *
                  * @return True if the option was set.
                  */
                 bool isPrismToJaniSet() const;
-                
+
                 /*!
                  * Retrieves the name of the file that contains the PRISM model specification if the model was given
                  * using the PRISM input option.
@@ -302,7 +302,7 @@ namespace storm {
                  * @return
                  */
                 bool areJaniPropertiesSelected() const;
-                
+
                 /*!
                  * @return  The names of the jani properties to check
                  */
@@ -328,42 +328,42 @@ namespace storm {
                  * @return The property filter.
                  */
                 std::string getPropertyFilter() const;
-                
+
                 /*!
                  * Retrieves whether the steady-state distribution is to be computed.
                  */
                 bool isComputeSteadyStateDistributionSet() const;
-                
+
                 /*!
                  * Retrieves whether the input model is to be read from the quantitative verification benchmark set (QVBS)
                  */
                 bool isQvbsInputSet() const;
-                
+
                 /*!
                  * Retrieves the specified model (short-)name of the QVBS
                  */
                 std::string getQvbsModelName() const;
-                
+
                 /*!
                  * Retrieves the selected model instance (file + open parameters of the model)
                  */
                 uint64_t getQvbsInstanceIndex() const;
-                
+
                 /*!
                  * Retrieves the selected property names
                  */
                 boost::optional<std::vector<std::string>> getQvbsPropertyFilter() const;
-                
+
                 /*!
                  * Retrieves the specified root directory of qvbs
                  */
                 std::string getQvbsRoot() const;
-                
+
                 /*!
                  * Retrieves whether the input properties are to be interpreted as a single multi-objective formula
                  */
                 bool isPropertiesAsMultiSet() const;
-                
+
                 bool check() const override;
                 void finalize() override;
 
