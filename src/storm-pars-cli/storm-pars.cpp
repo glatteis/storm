@@ -5,6 +5,7 @@
 #include "storm-pars/api/region.h"
 #include "storm-pars/analysis/MonotonicityHelper.h"
 
+#include "storm-pars/derivative/DerivativeBoundFinder.h"
 #include "storm-pars/derivative/GradientDescentInstantiationSearcher.h"
 #include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
 #include "storm-pars/modelchecker/instantiation/SparseCtmcInstantiationModelChecker.h"
@@ -280,7 +281,8 @@ namespace storm {
             auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
 
             PreprocessResult result(model, false);
-            if (monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() || derSettings.getDerivativeAtInstantiation()) {
+            if (monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() ||
+                derSettings.getDerivativeAtInstantiation() || derSettings.isLiftingTestSet()) {
                 STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
                 result.model = storm::pars::simplifyModel<ValueType>(result.model, input);
                 result.changed = true;
@@ -888,6 +890,22 @@ namespace storm {
             if (derSettings.isFeasibleInstantiationSearchSet() || derSettings.getDerivativeAtInstantiation()) {
                     storm::pars::performGradientDescent<ValueType>(model, input, omittedParameters);
                     return;
+            }
+            
+            if (derSettings.isLiftingTestSet()) {
+                std::vector<std::shared_ptr<storm::logic::Formula const>> formulas = storm::api::extractFormulasFromProperties(input.properties);
+                auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
+                auto formula = formulas[0];
+                auto dtmc = model->template as<storm::models::sparse::Dtmc<ValueType>>();
+                dtmc->reduceToStateBasedRewards();
+                storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
+                derivative::DerivativeBoundFinder<storm::RationalFunction, double> derivativeBoundFinder(*dtmc);
+                derivativeBoundFinder.specifyFormula(Environment(), checkTask);
+                for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
+                    std::cout << "Doing Demo PLA w.r.t. " << parameter << std::endl;;
+                    std::cout << "(Test conditions: aborting after 95% covered or 1000 regions computed)" << std::endl;;
+                    derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.05);
+                }
             }
 
             if (regions.empty()) {
