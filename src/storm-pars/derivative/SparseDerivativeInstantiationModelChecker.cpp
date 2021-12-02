@@ -11,7 +11,7 @@
 #include "settings/modules/CoreSettings.h"
 #include "settings/modules/GeneralSettings.h"
 #include "solver/GmmxxLinearEquationSolver.h"
-#include "solver/GmmxxMultiplier.h"
+#include "solver/multiplier/GmmxxMultiplier.h"
 #include "solver/SolverSelectionOptions.h"
 #include "solver/helper/SoundValueIterationHelper.h"
 #include "storm-pars/modelchecker/instantiation/SparseDtmcInstantiationModelChecker.h"

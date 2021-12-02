@@ -8,6 +8,7 @@
 #include "storm/generator/JaniNextStateGenerator.h"
 #include "storm/storage/jani/Model.h"
 #include "storm-parsers/api/model_descriptions.h"
+#include "storm/utility/cli.h"
 #include "storm/api/storm.h"
 
 
@@ -173,6 +174,15 @@ TEST(ExplicitJaniModelBuilderTest, Ma) {
     EXPECT_EQ(14ul, model->getNumberOfTransitions());
     ASSERT_TRUE(model->isOfType(storm::models::ModelType::MarkovAutomaton));
     EXPECT_EQ(7ul, model->as<storm::models::sparse::MarkovAutomaton<double>>()->getMarkovianStates().getNumberOfSetBits());
+
+    janiModel = storm::api::parseJaniModel(STORM_TEST_RESOURCES_DIR "/ma/ftwc.jani").first;
+    auto constants = storm::utility::cli::parseConstantDefinitionString(janiModel.getManager(), "N=2,TIME_BOUND=1");
+    janiModel = janiModel.defineUndefinedConstants(constants);
+    model = storm::builder::ExplicitModelBuilder<double>(janiModel).build();
+    EXPECT_EQ(1536ul, model->getNumberOfStates());
+    EXPECT_EQ(6448ul, model->getNumberOfTransitions());
+    ASSERT_TRUE(model->isOfType(storm::models::ModelType::MarkovAutomaton));
+    EXPECT_EQ(1530ul, model->as<storm::models::sparse::MarkovAutomaton<double>>()->getMarkovianStates().getNumberOfSetBits());
 }
 
 TEST(ExplicitJaniModelBuilderTest, FailComposition) {
@@ -187,4 +197,12 @@ TEST(ExplicitJaniModelBuilderTest, unassignedVariables) {
     std::shared_ptr<storm::models::sparse::Model<double>> model = storm::builder::ExplicitModelBuilder<double>(janiModel).build();
     EXPECT_EQ(25ul, model->getNumberOfStates());
     EXPECT_EQ(81ul, model->getNumberOfTransitions());
+}
+
+TEST(ExplicitJaniModelBuilderTest, enumerateInitial) {
+    storm::jani::Model janiModel = storm::api::parseJaniModel(STORM_TEST_RESOURCES_DIR "/mdp/enumerate_init.jani").first;
+    std::shared_ptr<storm::models::sparse::Model<double>> model = storm::builder::ExplicitModelBuilder<double>(janiModel).build();
+    EXPECT_EQ(94ul, model->getNumberOfStates());
+    EXPECT_EQ(145ul, model->getNumberOfTransitions());
+    EXPECT_EQ(72ul, model->getInitialStates().getNumberOfSetBits());
 }
