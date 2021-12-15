@@ -1,9 +1,12 @@
 #include "storm-pars/modelchecker/region/SparseParameterLiftingModelChecker.h"
 
+#include <memory>
 #include <queue>
 #include <boost/container/flat_set.hpp>
+#include <vector>
 #include <storm-pars/analysis/MonotonicityChecker.h>
 
+#include "models/ModelBase.h"
 #include "storm/adapters/RationalFunctionAdapter.h"
 #include "storm/logic/FragmentSpecification.h"
 #include "storm/modelchecker/results/ExplicitQuantitativeCheckResult.h"
@@ -237,6 +240,15 @@ namespace storm {
             typedef typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation Valuation;
             STORM_LOG_THROW(this->parametricModel->getInitialStates().getNumberOfSetBits() == 1, storm::exceptions::NotSupportedException, "Getting extremal values at the initial state requires a model with a single initial state.");
             bool const useMonotonicity = this->isUseMonotonicitySet();
+            bool const useDerivativeMonotonicity = true;
+            if (useDerivativeMonotonicity) {
+                models::sparse::Dtmc<typename SparseModelType::ValueType> copiedDtmc = *parametricModel->template as<models::sparse::Dtmc<typename SparseModelType::ValueType>>();
+                boundFinder = std::make_shared<derivative::DerivativeBoundFinder<typename SparseModelType::ValueType, ConstantType>>(std::move(copiedDtmc));
+                std::cout << currentCheckTask->getFormula().isInFragment(storm::logic::reachability().setRewardOperatorsAllowed(true)) << std::endl;
+                auto checkTask = currentCheckTask->template convertValueType<typename SparseModelType::ValueType>();
+                std::cout << checkTask.getFormula().isInFragment(storm::logic::reachability().setRewardOperatorsAllowed(true)) << std::endl;
+                boundFinder->specifyFormula(env, checkTask);
+            }
             bool const minimize = storm::solver::minimize(dir);
 
             // Comparator for the region queue
@@ -273,6 +285,9 @@ namespace storm {
 
                 regionQueue.emplace(region, order, monRes, initBound);
                 first = false;
+            } else if (useDerivativeMonotonicity) {
+                auto localMonotonicity = std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>>(new storm::analysis::LocalMonotonicityResult<VariableType>(parametricModel->getNumberOfStates()));
+                regionQueue.emplace(region, nullptr, localMonotonicity, initBound);
             } else {
                 regionQueue.emplace(region, nullptr, nullptr, initBound);
             }
@@ -301,7 +316,7 @@ namespace storm {
             auto numberOfOrderCopies = 0;
             auto numberOfMonResCopies = 0;
             storm::utility::Stopwatch loopWatch(true);
-            if (!(useMonotonicity && regionQueue.top().localMonRes->getGlobalMonotonicityResult()->isDone() && regionQueue.top().localMonRes->getGlobalMonotonicityResult()->isAllMonotonicity())) {
+            if (!((useMonotonicity || useDerivativeMonotonicity) && regionQueue.top().localMonRes->getGlobalMonotonicityResult()->isDone() && regionQueue.top().localMonRes->getGlobalMonotonicityResult()->isAllMonotonicity())) {
                 // Doing the extremal computation, only when we don't use monotonicity or there are possibly not monotone variables.
                 auto totalArea = storm::utility::convertNumber<ConstantType>(region.area());
                 auto coveredArea = storm::utility::zero<ConstantType>();
@@ -353,10 +368,55 @@ namespace storm {
                                     this->extendLocalMonotonicityResult(currRegion, order, localMonotonicityResult);
                                     STORM_LOG_INFO("Order and monotonicity result got extended");
                                 }
+                            } else if (useDerivativeMonotonicity) {
+                                numberOfPLACallsBounds++;
+                                std::vector<ConstantType> minBound;
+                                std::vector<ConstantType> maxBound;
+                                if (dir == solver::OptimizationDirection::Minimize) {
+                                    minBound = bounds;
+                                    maxBound = getBound(env, region, storm::solver::OptimizationDirection::Maximize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                                } else {
+                                    minBound = getBound(env, region, storm::solver::OptimizationDirection::Minimize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                                    maxBound = bounds;
+                                }
+                                if (numberOfCopiesMonRes[localMonotonicityResult] != 1) {
+                                    numberOfCopiesMonRes[localMonotonicityResult]--;
+                                    localMonotonicityResult = localMonotonicityResult->copy();
+                                    numberOfMonResCopies++;
+                                } else {
+                                    assert (numberOfCopiesMonRes[localMonotonicityResult] == 1);
+                                }
+                                auto oldModel = this->parametricModel;
+                                auto oldCheckTask = currentCheckTask->template convertValueType<typename SparseModelType::ValueType>();
+                                auto oldSplitEstimates = this->isRegionSplitEstimateSupported();
+                                for (auto const& parameter : storm::models::sparse::getAllParameters(*parametricModel)) {
+                                    if (localMonotonicityResult->getGlobalMonotonicityResult()->isMonotone(parameter)) {
+                                        continue;
+                                    }
+                                    auto derivativeCheckStuff = boundFinder->computeMonotonicityTasks(
+                                        env, region, minBound, maxBound, localMonotonicityResult, parameter
+                                    );
+                                    auto model = derivativeCheckStuff.first;
+                                    auto formulaMin = derivativeCheckStuff.second.first;
+                                    auto formulaMax = derivativeCheckStuff.second.second;
+                                    auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMin);
+                                    auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMax);
+                                    this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMin, false, false);
+                                    auto derivativeResultsMin = this->getBound(env, region, OptimizationDirection::Maximize, localMonotonicityResult)
+                                                             ->template asExplicitQuantitativeCheckResult<ConstantType>()
+                                                             .getValueVector();
+                                    this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMax, false, false);
+                                    auto derivativeResultsMax = this->getBound(env, region, OptimizationDirection::Maximize, localMonotonicityResult)
+                                                             ->template asExplicitQuantitativeCheckResult<ConstantType>()
+                                                             .getValueVector();
+                                    boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
+                                    STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
+                                }
+                                this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                             }
 
                             // Check whether this region contains a new 'good' value and set this value
-                            auto point = useMonotonicity ? currRegion.getPoint(dir, *(localMonotonicityResult->getGlobalMonotonicityResult())) : currRegion.getCenterPoint();
+                            auto point = (useMonotonicity || useDerivativeMonotonicity) ? currRegion.getPoint(dir, *(localMonotonicityResult->getGlobalMonotonicityResult())) : currRegion.getCenterPoint();
                             auto currValue = getInstantiationChecker().check(env, point)->template asExplicitQuantitativeCheckResult<ConstantType>()[*this->parametricModel->getInitialStates().begin()];
                             if (!value || (minimize ? currValue <= value.get() : currValue >= value.get())) {
                                 value = currValue;
@@ -378,7 +438,7 @@ namespace storm {
                                     boundsWatch.stop();
                                 }
                                 // Now split the region
-                                if (useMonotonicity) {
+                                if (useMonotonicity || useDerivativeMonotonicity) {
                                     this->splitSmart(currRegion, newRegions,
                                                      *(localMonotonicityResult->getGlobalMonotonicityResult()), true);
                                 } else if (this->isRegionSplitEstimateSupported()) {
@@ -414,6 +474,16 @@ namespace storm {
                                 numberOfCopiesMonRes[localMonotonicityResult] += newRegions.size();
                             } else {
                                 numberOfCopiesOrder[order] = newRegions.size();
+                                numberOfCopiesMonRes[localMonotonicityResult] = newRegions.size();
+                            }
+                        } else if (useDerivativeMonotonicity) {
+                            for (auto &r : newRegions) {
+                                r.setBoundParent(storm::utility::convertNumber<CoefficientType>(currBound));
+                                regionQueue.emplace(r, nullptr, localMonotonicityResult, currBound);
+                            }
+                            if (numberOfCopiesMonRes.find(localMonotonicityResult) != numberOfCopiesMonRes.end()) {
+                                numberOfCopiesMonRes[localMonotonicityResult] += newRegions.size();
+                            } else {
                                 numberOfCopiesMonRes[localMonotonicityResult] = newRegions.size();
                             }
                         } else {

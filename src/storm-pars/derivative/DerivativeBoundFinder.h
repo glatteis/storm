@@ -1,11 +1,12 @@
 #ifndef STORM_DERIVATIVEBOUNDFINDER_H
 #define STORM_DERIVATIVEBOUNDFINDER_H
 
+#include <memory>
 #include <queue>
 #include "environment/Environment.h"
 #include "modelchecker/CheckTask.h"
 #include "models/sparse/Dtmc.h"
-#include "storm-pars/modelchecker/region/SparseDtmcParameterLiftingModelChecker.h"
+#include "storm-pars/analysis/MonotonicityResult.h"
 #include "storm-pars/transformer/ParameterLifter.h"
 #include "storm-pars/utility/parametric.h"
 namespace storm {
@@ -14,9 +15,7 @@ namespace derivative {
 template<typename FunctionType, typename ConstantType>
 class DerivativeBoundFinder {
    public:
-    DerivativeBoundFinder<FunctionType, ConstantType>(storm::models::sparse::Dtmc<FunctionType> const model)
-        : model(model),
-          liftingModelChecker(std::make_unique<modelchecker::SparseDtmcParameterLiftingModelChecker<models::sparse::Dtmc<FunctionType>, ConstantType>>()) {}
+    DerivativeBoundFinder<FunctionType, ConstantType>(storm::models::sparse::Dtmc<FunctionType> const model) : model(model) {}
 
     void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask) {
         this->currentFormula = checkTask.getFormula().asSharedPointer();
@@ -52,12 +51,31 @@ class DerivativeBoundFinder {
         }
     }
 
-    void derivativePLASketch(Environment const& env, typename utility::parametric::VariableType<FunctionType>::type parameter, ConstantType terminateArea);
+    std::pair<models::sparse::Dtmc<FunctionType>, std::pair<std::shared_ptr<storm::logic::Formula>,
+                                                            std::shared_ptr<storm::logic::Formula>>>
+    computeMonotonicityTasks(
+        Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region, std::vector<ConstantType> minValues,
+        std::vector<ConstantType> maxValues,
+        std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
+        // std::shared_ptr<storm::analysis::MonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> globalMonotonicityResult,
+        typename utility::parametric::VariableType<FunctionType>::type const& parameter
+        );
 
-    std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>,
-              std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>
-    getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region,
-                       typename utility::parametric::VariableType<FunctionType>::type parameter);
+    void
+    updateMonotonicityResult(
+        std::vector<ConstantType> derivativeMinValues, std::vector<ConstantType> derivativeMaxValues,
+        std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
+        // std::shared_ptr<storm::analysis::MonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> globalMonotonicityResult,
+        typename utility::parametric::VariableType<FunctionType>::type const& parameter,
+        uint_fast64_t initialState
+    );
+
+    // void derivativePLASketch(Environment const& env, typename utility::parametric::VariableType<FunctionType>::type parameter, ConstantType terminateArea);
+
+    // std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>,
+    //           std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>
+    // getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region,
+    //                    typename utility::parametric::VariableType<FunctionType>::type parameter);
 
    private:
     std::unique_ptr<modelchecker::CheckTask<storm::logic::Formula, FunctionType>> currentCheckTask;
@@ -71,8 +89,6 @@ class DerivativeBoundFinder {
 
     const models::sparse::Dtmc<FunctionType> model;
     std::set<typename utility::parametric::VariableType<FunctionType>::type> parameters;
-
-    std::unique_ptr<modelchecker::SparseDtmcParameterLiftingModelChecker<models::sparse::Dtmc<FunctionType>, ConstantType>> liftingModelChecker;
 };
 
 }  // namespace derivative

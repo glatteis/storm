@@ -905,7 +905,7 @@ namespace storm {
                 for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
                     std::cout << "Doing Demo PLA w.r.t. " << parameter << std::endl;;
                     std::cout << "(Test conditions: aborting after 95% covered or 1000 regions computed)" << std::endl;;
-                    derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.05);
+                    // derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.05);
                 }
             }
 

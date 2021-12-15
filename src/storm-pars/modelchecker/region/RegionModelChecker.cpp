@@ -138,6 +138,10 @@ namespace storm {
                     currentDepth = refinementDepths.front();
                 }
 
+                // Building order for monotonicity
+                // Boolean einbauen ob es meine oder Jips Impl ist
+                // erstes local (global) monotocity result ausrechen
+
                 // FIFO queues for the order and local monotonicity results
                 std::queue<std::shared_ptr<storm::analysis::Order>> orders;
                 std::queue<std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>>> localMonotonicityResults;

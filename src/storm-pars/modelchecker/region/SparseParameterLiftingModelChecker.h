@@ -5,6 +5,7 @@
 #include "storm-pars/modelchecker/instantiation/SparseInstantiationModelChecker.h"
 #include "storm-pars/storage/ParameterRegion.h"
 #include "storm-pars/utility/parametric.h"
+#include "storm-pars/derivative/DerivativeBoundFinder.h"
 
 #include "storm/logic/Formulas.h"
 #include "storm/modelchecker/CheckTask.h"
@@ -88,6 +89,7 @@ namespace storm {
             std::unique_ptr<CheckTask<storm::logic::Formula, ConstantType>> currentCheckTask;
             ConstantType lastValue;
             std::shared_ptr<storm::analysis::OrderExtender<typename SparseModelType::ValueType, ConstantType>> orderExtender;
+            std::shared_ptr<storm::derivative::DerivativeBoundFinder<typename SparseModelType::ValueType, ConstantType>> boundFinder;
 
             std::pair<typename SparseModelType::ValueType, typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation> checkForPossibleMonotonicity(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, std::set<VariableType>& possibleMonotoneIncrParameters, std::set<VariableType>& possibleMonotoneDecrParameters, std::set<VariableType>& possibleNotMonotoneParameters, std::set<VariableType>const& consideredVariables, storm::solver::OptimizationDirection const& dir);
             std::pair<typename SparseModelType::ValueType, typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation> getGoodInitialPoint(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, storm::solver::OptimizationDirection const& dir, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonRes);
