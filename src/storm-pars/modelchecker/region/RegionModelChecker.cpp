@@ -395,7 +395,7 @@ namespace storm {
 
         template <typename ParametricType>
         void RegionModelChecker<ParametricType>::setUseBounds(bool bounds) {
-            assert (!bounds || useMonotonicity);
+            // assert (!bounds || useMonotonicity); HEHEHE
             this->useBounds = bounds;
         }
 

@@ -240,7 +240,7 @@ namespace storm {
             typedef typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation Valuation;
             STORM_LOG_THROW(this->parametricModel->getInitialStates().getNumberOfSetBits() == 1, storm::exceptions::NotSupportedException, "Getting extremal values at the initial state requires a model with a single initial state.");
             bool const useMonotonicity = this->isUseMonotonicitySet();
-            bool const useDerivativeMonotonicity = true;
+            bool const useDerivativeMonotonicity = this->isUseBoundsSet() && !this->isUseMonotonicitySet();
             if (useDerivativeMonotonicity) {
                 models::sparse::Dtmc<typename SparseModelType::ValueType> copiedDtmc = *parametricModel->template as<models::sparse::Dtmc<typename SparseModelType::ValueType>>();
                 boundFinder = std::make_shared<derivative::DerivativeBoundFinder<typename SparseModelType::ValueType, ConstantType>>(std::move(copiedDtmc));
