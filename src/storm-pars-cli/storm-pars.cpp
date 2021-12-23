@@ -212,7 +212,14 @@ namespace storm {
 
                     storm::storage::FlexibleSparseMatrix<ValueType> flexibleMatrix(matrix);
                     storm::storage::FlexibleSparseMatrix<ValueType> flexibleBackwardTransitions(backwardsTransitionMatrix, true);
-                    auto actionRewards = std::vector<ValueType>(matrix.getRowCount(), storm::utility::zero<ValueType>());
+                    // get the action-based reward values
+                    std::vector<ValueType> actionRewards;
+                    if(model->hasUniqueRewardModel()) {
+                        actionRewards = sparseModel->getUniqueRewardModel().getTotalRewardVector(matrix);
+                    } else {
+                        STORM_LOG_ASSERT(sparseModel->getRewardModels().size() == 0, "All rewards get lost");
+                        actionRewards = std::vector<ValueType>(matrix.getRowCount(), storm::utility::zero<ValueType>());
+                    }
                     storm::solver::stateelimination::NondeterministicModelStateEliminator<ValueType> stateEliminator(flexibleMatrix, flexibleBackwardTransitions, actionRewards);
                     for(auto state : selectedStates) {
                         stateEliminator.eliminateState(state, true);
@@ -224,9 +231,16 @@ namespace storm {
                     selectedStates.complement();
                     auto keptRows = matrix.getRowFilter(selectedStates);
                     storm::storage::SparseMatrix<ValueType> newTransitionMatrix = flexibleMatrix.createSparseMatrix(keptRows, selectedStates);
-                    // TODO @Jip: note that rewards get lost
-                    result = std::make_shared<storm::models::sparse::Dtmc<ValueType>>(std::move(newTransitionMatrix), sparseModel->getStateLabeling().getSubLabeling(selectedStates));
 
+                    // obtain the reward model for the resulting system
+                    std::unordered_map<std::string, storm::models::sparse::StandardRewardModel<ValueType>> rewardModels;
+                    if(model->hasUniqueRewardModel()) {
+                        storm::utility::vector::filterVectorInPlace(actionRewards, keptRows);
+                        storm::models::sparse::StandardRewardModel<ValueType> rewardModel((boost::none, std::move(actionRewards)));
+                        rewardModels.insert(std::make_pair(model->getUniqueRewardModelName(), rewardModel));
+                    }
+
+                    result= std::make_shared<storm::models::sparse::Dtmc<ValueType>>(std::move(newTransitionMatrix), sparseModel->getStateLabeling().getSubLabeling(selectedStates), std::move(rewardModels));
                     eliminationWatch.stop();
                     STORM_PRINT(std::endl << "Time for scc elimination: " << eliminationWatch << "." << std::endl << std::endl);
                     result->printModelInformationToStream(std::cout);
@@ -909,14 +923,14 @@ namespace storm {
                 }
             }
 
-            if (regions.empty()) {
+            auto monSettings = storm::settings::getModule<storm::settings::modules::MonotonicitySettings>();
+            if (monSettings.isMonotonicityAnalysisSet()) {
+                storm::pars::analyzeMonotonicity(model, input, regions);
+            } else if (regions.empty()) {
                 storm::pars::verifyPropertiesWithSparseEngine(model, input, samples);
             } else {
                 auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
-                auto monSettings = storm::settings::getModule<storm::settings::modules::MonotonicitySettings>();
-                if (monSettings.isMonotonicityAnalysisSet()) {
-                    storm::pars::analyzeMonotonicity(model, input, regions);
-                } else if (regionSettings.isExtremumSet()) {
+                if (regionSettings.isExtremumSet()) {
                     storm::pars::computeRegionExtremumWithSparseEngine(model, input, regions, monotonicitySettings, monotoneParameters);
                 } else {
                     assert (monotoneParameters == boost::none);
@@ -965,8 +979,7 @@ namespace storm {
             if (model->isSparseModel()) {
                 storm::pars::verifyWithSparseEngine<ValueType>(model->as<storm::models::sparse::Model<ValueType>>(), input, regions, samples, monotonicitySettings, monotoneParameters, monThresh, omittedParameters);
             } else {
-                assert (!monotonicitySettings.useMonotonicity);
-                assert (monotoneParameters == boost::none);
+                STORM_LOG_ASSERT (!monotonicitySettings.useMonotonicity, "Monotonicity cannot be applied to DD models");
                 storm::pars::verifyWithDdEngine<DdType, ValueType>(model->as<storm::models::symbolic::Model<DdType, ValueType>>(), input, regions, samples);
             }
         }

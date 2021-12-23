@@ -25,7 +25,7 @@ namespace storm {
             // This also adds states to the order if they are not yet sorted, but can be sorted based on min/max values
             auto sortedSuccStates = this->sortStatesOrderAndMinMax(successors, order);
             for (uint_fast64_t succ: successors) {
-                if (order->compare(currentState, succ) == Order::NodeComparison::UNKNOWN) {
+                if (this->usePLA[order] && order->compare(currentState, succ) == Order::NodeComparison::UNKNOWN) {
                     auto addRes = this->addStatesBasedOnMinMax(order, currentState, succ);
                     if (addRes == Order::NodeComparison::ABOVE) {
                         addedSomething = true;
@@ -198,10 +198,18 @@ namespace storm {
 
         template<typename ValueType, typename ConstantType>
         void RewardOrderExtenderDtmc<ValueType, ConstantType>::handleOneSuccessor(std::shared_ptr<Order> order, uint_fast64_t currentState, uint_fast64_t successor) {
-            if (rewardModel.getStateActionReward(currentState) == ValueType(0)) {
+            ValueType reward = ValueType(0);
+            if (rewardModel.hasStateActionRewards()) {
+                reward = rewardModel.getStateActionReward(currentState);
+            } else if (rewardModel.hasStateRewards()) {
+                reward = rewardModel.getStateReward(currentState);
+            } else {
+                STORM_LOG_ASSERT(false, "Expecting reward");
+            }
+            if (reward == ValueType(0)) {
                 order->addToNode(currentState, order->getNode(successor));
             } else {
-                assert(!(rewardModel.getStateActionReward(currentState) < ValueType(0)));
+                STORM_LOG_ASSERT(!(reward < ValueType(0)), "Expecting reward to be positive");
                 order->addAbove(currentState, order->getNode(successor));
             }
         }
