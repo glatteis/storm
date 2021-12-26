@@ -3,12 +3,15 @@
 
 #include <memory>
 #include <queue>
+#include "builder/TerminalStatesGetter.h"
 #include "environment/Environment.h"
+#include "logic/Formula.h"
 #include "modelchecker/CheckTask.h"
 #include "models/sparse/Dtmc.h"
 #include "storm-pars/analysis/MonotonicityResult.h"
 #include "storm-pars/transformer/ParameterLifter.h"
 #include "storm-pars/utility/parametric.h"
+#include "utility/macros.h"
 namespace storm {
 namespace derivative {
 
@@ -39,6 +42,10 @@ class DerivativeBoundFinder {
             /* this->subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none); */
             this->formulaOperatorInformation = checkTask.getFormula().asRewardOperatorFormula().getOperatorInformation();
         }
+        auto terminalStates = storm::builder::getTerminalStatesFromFormula(*this->currentFormulaNoBound);
+        STORM_LOG_ASSERT(terminalStates.terminalExpressions.size() == 1, "Model needs one terminal label!");
+        this->terminalExpression = terminalStates.terminalExpressions[0];
+        
         this->currentCheckTaskNoBound = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*currentFormulaNoBound);
         this->currentCheckTaskNoBoundConstantType =
             std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, ConstantType>>(*currentFormulaNoBound);
@@ -83,6 +90,7 @@ class DerivativeBoundFinder {
     std::unique_ptr<modelchecker::CheckTask<storm::logic::Formula, ConstantType>> currentCheckTaskNoBoundConstantType;
     std::shared_ptr<storm::logic::Formula const> currentFormula;
     std::shared_ptr<storm::logic::Formula const> currentFormulaNoBound;
+    std::unique_ptr<storm::logic::Formula const> terminalExpression;
 
     /* std::shared_ptr<storm::logic::EventuallyFormula const> subformula; */
     logic::OperatorInformation formulaOperatorInformation;

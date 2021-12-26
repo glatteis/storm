@@ -20,6 +20,11 @@ namespace storm {
     
     namespace modelchecker{
         
+        enum class MonotonicityType {
+            GRAPH, // Graph based monotonicity (standard)
+            LIFTING // Lifting based monotonicity (weird)
+        };
+
         template<typename ParametricType>
         class RegionModelChecker {
         public:
@@ -89,10 +94,12 @@ namespace storm {
             bool isUseMonotonicitySet() const;
             bool isUseBoundsSet();
             bool isOnlyGlobalSet();
+            MonotonicityType getMonotonicityType();
 
             void setUseMonotonicity(bool monotonicity = true);
             void setUseBounds(bool bounds = true);
             void setUseOnlyGlobal(bool global = true);
+            void setMonotonicityType(MonotonicityType type = MonotonicityType::LIFTING);
 
             void setMonotoneParameters(std::pair<std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>> monotoneParameters);
 
@@ -100,6 +107,7 @@ namespace storm {
             bool useMonotonicity = false;
             bool useOnlyGlobal = false;
             bool useBounds = false;
+            MonotonicityType monotonicityType = MonotonicityType::LIFTING; // TODO make configurable
 
         protected:
 

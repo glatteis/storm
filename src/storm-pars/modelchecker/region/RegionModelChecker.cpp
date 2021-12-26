@@ -389,13 +389,18 @@ namespace storm {
         }
 
         template <typename ParametricType>
+        MonotonicityType RegionModelChecker<ParametricType>::getMonotonicityType() {
+            return monotonicityType;
+        }
+
+        template <typename ParametricType>
         void RegionModelChecker<ParametricType>::setUseMonotonicity(bool monotonicity) {
             this->useMonotonicity = monotonicity;
         }
 
         template <typename ParametricType>
         void RegionModelChecker<ParametricType>::setUseBounds(bool bounds) {
-            // assert (!bounds || useMonotonicity); HEHEHE
+            assert (!bounds || useMonotonicity);
             this->useBounds = bounds;
         }
 
@@ -403,6 +408,11 @@ namespace storm {
         void RegionModelChecker<ParametricType>::setUseOnlyGlobal(bool global) {
             assert (!global || useMonotonicity);
             this->useOnlyGlobal = global;
+        }
+
+        template <typename ParametricType>
+        void RegionModelChecker<ParametricType>::setMonotonicityType(MonotonicityType type) {
+            this->monotonicityType = type;
         }
 
         template <typename ParametricType>

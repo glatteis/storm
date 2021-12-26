@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <memory>
 #include "logic/FormulasForwardDeclarations.h"
+#include "modelchecker/propositional/SparsePropositionalModelChecker.h"
+#include "modelchecker/results/CheckResult.h"
+#include "modelchecker/results/ExplicitQualitativeCheckResult.h"
+#include "models/sparse/Dtmc.h"
 #include "settings/modules/GeneralSettings.h"
 #include "storm-pars/analysis/MonotonicityResult.h"
 #include "storm-pars/utility/parametric.h"
@@ -240,7 +244,8 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     modelCopy.addRewardModel("derivative-max", rewardModelMax);
     modelCopy.addRewardModel("derivative-min", rewardModelMin);
 
-    storage::BitVector target = modelCopy.getStates("target");
+    storm::modelchecker::SparsePropositionalModelChecker<models::sparse::Dtmc<FunctionType>> propositionalChecker(modelCopy);
+    storm::storage::BitVector target = std::move(propositionalChecker.check(*this->terminalExpression)->asExplicitQualitativeCheckResult().getTruthValuesVector());
     storm::storage::BitVector newTarget(target.size());
 
     if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
