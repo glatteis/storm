@@ -26,25 +26,30 @@ class DerivativeBoundFinder {
             checkTask.substituteFormula(*currentFormula).template convertValueType<FunctionType>());
 
         if (!checkTask.getFormula().isRewardOperatorFormula()) {
+            auto subformula = checkTask.getFormula().asProbabilityOperatorFormula().getSubformula().asSharedPointer();
             this->currentFormulaNoBound = std::make_shared<storm::logic::ProbabilityOperatorFormula>(
-                checkTask.getFormula().asProbabilityOperatorFormula().getSubformula().asSharedPointer(),
+                subformula,
                 storm::logic::OperatorInformation(boost::none, boost::none));
+            this->currentSubformula = subformula->asUnaryPathFormula().getSubformula().asSharedPointer();
             /* auto subformulaConstructor =
              * checkTask.getFormula().asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula().asSharedPointer(); */
             /* this->subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none); */
             this->formulaOperatorInformation = checkTask.getFormula().asProbabilityOperatorFormula().getOperatorInformation();
         } else {
-            // No worries, this works as intended, the API is just weird.
+            auto subformula = checkTask.getFormula().asRewardOperatorFormula().getSubformula().asSharedPointer();
+            // No worries, this works as intended, the API is just weiird.
             this->currentFormulaNoBound =
-                std::make_shared<storm::logic::RewardOperatorFormula>(checkTask.getFormula().asRewardOperatorFormula().getSubformula().asSharedPointer());
+                std::make_shared<storm::logic::RewardOperatorFormula>(subformula);
+            this->currentSubformula = subformula->asUnaryPathFormula().getSubformula().asSharedPointer();
             /* auto subformulaConstructor =
              * checkTask.getFormula().asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula().asSharedPointer(); */
             /* this->subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none); */
             this->formulaOperatorInformation = checkTask.getFormula().asRewardOperatorFormula().getOperatorInformation();
         }
-        auto terminalStates = storm::builder::getTerminalStatesFromFormula(*this->currentFormulaNoBound);
-        STORM_LOG_ASSERT(terminalStates.terminalExpressions.size() == 1, "Model needs one terminal label!");
-        this->terminalExpression = terminalStates.terminalExpressions[0];
+
+        // auto terminalStates = storm::builder::getTerminalStatesFromFormula(*this->currentFormulaNoBound);
+        // STORM_LOG_ASSERT(terminalStates.terminalExpressions.size() == 1, "Model needs one terminal label!");
+        // this->terminalExpression = terminalStates.terminalExpressions[0];
         
         this->currentCheckTaskNoBound = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*currentFormulaNoBound);
         this->currentCheckTaskNoBoundConstantType =
@@ -90,7 +95,8 @@ class DerivativeBoundFinder {
     std::unique_ptr<modelchecker::CheckTask<storm::logic::Formula, ConstantType>> currentCheckTaskNoBoundConstantType;
     std::shared_ptr<storm::logic::Formula const> currentFormula;
     std::shared_ptr<storm::logic::Formula const> currentFormulaNoBound;
-    std::unique_ptr<storm::logic::Formula const> terminalExpression;
+    std::shared_ptr<storm::logic::Formula const> currentSubformula;
+    // std::unique_ptr<storm::logic::Formula const> terminalExpression;
 
     /* std::shared_ptr<storm::logic::EventuallyFormula const> subformula; */
     logic::OperatorInformation formulaOperatorInformation;

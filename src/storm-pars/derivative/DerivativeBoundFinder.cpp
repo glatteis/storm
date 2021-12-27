@@ -245,8 +245,12 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     modelCopy.addRewardModel("derivative-min", rewardModelMin);
 
     storm::modelchecker::SparsePropositionalModelChecker<models::sparse::Dtmc<FunctionType>> propositionalChecker(modelCopy);
-    storm::storage::BitVector target = std::move(propositionalChecker.check(*this->terminalExpression)->asExplicitQualitativeCheckResult().getTruthValuesVector());
+    storm::storage::BitVector target = std::move(propositionalChecker.check(*this->currentSubformula)->asExplicitQualitativeCheckResult().getTruthValuesVector());
     storm::storage::BitVector newTarget(target.size());
+    
+    for (uint_fast64_t i = 0; i < target.size(); i++) {
+        std::cout << i << ":" << target.get(i) << std::endl;
+    }
 
     if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
         newTarget = target;
@@ -290,9 +294,9 @@ DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult(
     uint_fast64_t initialState
 ) {
     boost::optional<typename analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity> finalResult;
-    if (derivativeMaxValues[initialState] < 0) {
+    if (derivativeMaxValues[initialState] < -1e-6) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Decr;
-    } else if (derivativeMinValues[initialState] > 0) {
+    } else if (derivativeMinValues[initialState] > 1e-6) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Incr;
     } else if (derivativeMaxValues[initialState] == 0 && derivativeMinValues[initialState] == 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Constant;

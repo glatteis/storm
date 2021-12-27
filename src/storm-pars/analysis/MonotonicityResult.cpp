@@ -17,7 +17,8 @@ namespace storm {
 
         template <typename VariableType>
         void MonotonicityResult<VariableType>::addMonotonicityResult(VariableType var,  MonotonicityResult<VariableType>::Monotonicity mon) {
-            monotonicityResult.insert(std::pair<VariableType, MonotonicityResult<VariableType>::Monotonicity>(std::move(var), std::move(mon)));
+            monotonicityResult[std::move(var)] = std::move(mon);
+            // monotonicityResult.insert(std::pair<VariableType, MonotonicityResult<VariableType>::Monotonicity>(std::move(var), std::move(mon)));
         }
 
         template <typename VariableType>

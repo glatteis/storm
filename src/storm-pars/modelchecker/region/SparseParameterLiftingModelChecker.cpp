@@ -318,11 +318,6 @@ namespace storm {
                 // }
                 // this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                 auto localMonotonicityResult = std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>>(new storm::analysis::LocalMonotonicityResult<VariableType>(parametricModel->getNumberOfStates()));
-                for (uint_fast64_t state = 0; state < parametricModel->getNumberOfStates(); state++) {
-                    for (auto const& parameter : storm::models::sparse::getAllParameters(*parametricModel)) {
-                        localMonotonicityResult->setMonotonicity(state, parameter, storm::analysis::LocalMonotonicityResult<VariableType>::Monotonicity::Unknown);
-                    }
-                }
                 regionQueue.emplace(region, nullptr, localMonotonicityResult, initBound);
             } else {
                 regionQueue.emplace(region, nullptr, nullptr, initBound);
@@ -410,9 +405,9 @@ namespace storm {
                                 std::vector<ConstantType> maxBound;
                                 if (dir == solver::OptimizationDirection::Minimize) {
                                     minBound = bounds;
-                                    maxBound = getBound(env, region, storm::solver::OptimizationDirection::Maximize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                                    maxBound = getBound(env, currRegion, storm::solver::OptimizationDirection::Maximize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
                                 } else {
-                                    minBound = getBound(env, region, storm::solver::OptimizationDirection::Minimize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                                    minBound = getBound(env, currRegion, storm::solver::OptimizationDirection::Minimize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
                                     maxBound = bounds;
                                 }
                                 if (numberOfCopiesMonRes[localMonotonicityResult] != 1) {
@@ -430,24 +425,32 @@ namespace storm {
                                         continue;
                                     }
                                     auto derivativeCheckStuff = boundFinder->computeMonotonicityTasks(
-                                        env, region, minBound, maxBound, localMonotonicityResult, parameter
+                                        env, currRegion, minBound, maxBound, localMonotonicityResult, parameter
                                     );
                                     auto model = derivativeCheckStuff.first;
                                     auto formulaMin = derivativeCheckStuff.second.first;
                                     auto formulaMax = derivativeCheckStuff.second.second;
+                                    
+                                    // For debugging
+                                    auto rewardModelMax = model.getRewardModel("derivative-max");
+                                    auto rewardModelMin = model.getRewardModel("derivative-min");
+                                    // End 
                                     auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMin);
                                     auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMax);
                                     this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMin, false, false);
-                                    auto derivativeResultsMin = this->getBound(env, region, OptimizationDirection::Maximize, localMonotonicityResult)
+                                    auto derivativeResultsMin = this->getBound(env, currRegion, OptimizationDirection::Minimize, localMonotonicityResult)
                                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                                              .getValueVector();
                                     this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMax, false, false);
-                                    auto derivativeResultsMax = this->getBound(env, region, OptimizationDirection::Maximize, localMonotonicityResult)
+                                    // TODO NEXT THIS OUTPUTS THE WRONG THING!!!
+                                    auto derivativeResultsMax = this->getBound(env, currRegion, OptimizationDirection::Maximize, localMonotonicityResult)
                                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                                              .getValueVector();
                                     boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
                                     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
                                 }
+                                std::cout << localMonotonicityResult->toString() << std::endl;
+                                std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
                                 this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                             }
 
