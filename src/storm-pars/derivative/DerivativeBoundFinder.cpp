@@ -247,10 +247,6 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     storm::modelchecker::SparsePropositionalModelChecker<models::sparse::Dtmc<FunctionType>> propositionalChecker(modelCopy);
     storm::storage::BitVector target = std::move(propositionalChecker.check(*this->currentSubformula)->asExplicitQualitativeCheckResult().getTruthValuesVector());
     storm::storage::BitVector newTarget(target.size());
-    
-    for (uint_fast64_t i = 0; i < target.size(); i++) {
-        std::cout << i << ":" << target.get(i) << std::endl;
-    }
 
     if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
         newTarget = target;
