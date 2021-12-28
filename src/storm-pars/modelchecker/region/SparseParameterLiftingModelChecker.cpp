@@ -243,6 +243,8 @@ namespace storm {
             auto monotonicityType = this->getMonotonicityType();
             bool const useGraphMonotonicity = this->isUseMonotonicitySet() && monotonicityType == MonotonicityType::GRAPH;
             bool const useDerivativeMonotonicity = this->isUseMonotonicitySet() && monotonicityType == MonotonicityType::LIFTING;
+            boost::optional<SparseParameterLiftingModelChecker> minChecker;
+            boost::optional<SparseParameterLiftingModelChecker> maxChecker;
             if (useDerivativeMonotonicity) {
                 models::sparse::Dtmc<typename SparseModelType::ValueType> copiedDtmc = *parametricModel->template as<models::sparse::Dtmc<typename SparseModelType::ValueType>>();
                 boundFinder = std::make_shared<derivative::DerivativeBoundFinder<typename SparseModelType::ValueType, ConstantType>>(std::move(copiedDtmc));
@@ -419,7 +421,8 @@ namespace storm {
                                 auto oldCheckTask = currentCheckTask->template convertValueType<typename SparseModelType::ValueType>();
                                 auto oldSplitEstimates = this->isRegionSplitEstimateSupported();
                                 for (auto const& parameter : storm::models::sparse::getAllParameters(*parametricModel)) {
-                                    if (localMonotonicityResult->getGlobalMonotonicityResult()->isMonotone(parameter)) {
+                                    auto globalMonotonicity = localMonotonicityResult->getGlobalMonotonicityResult()->getMonotonicity(parameter);
+                                    if (globalMonotonicity != Monotonicity::Unknown) {
                                         continue;
                                     }
                                     auto derivativeCheckStuff = boundFinder->computeMonotonicityTasks(

@@ -232,6 +232,8 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
             localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Incr);
         } else  if (derivativeMin == 0 && derivativeMax == 0) {
             localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Constant);
+        } else {
+            localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Unknown);
         }
 
         stateRewardsMax[i] += FunctionType(utility::convertNumber<CoefficientType<FunctionType>>((ConstantType)(derivativeMax)));
@@ -296,6 +298,8 @@ DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult(
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Incr;
     } else if (derivativeMaxValues[initialState] == 0 && derivativeMinValues[initialState] == 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Constant;
+    } else {
+        finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Unknown;
     }
 
     if (finalResult) {
