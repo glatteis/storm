@@ -432,10 +432,6 @@ namespace storm {
                                     auto formulaMin = derivativeCheckStuff.second.first;
                                     auto formulaMax = derivativeCheckStuff.second.second;
                                     
-                                    // For debugging
-                                    auto rewardModelMax = model.getRewardModel("derivative-max");
-                                    auto rewardModelMin = model.getRewardModel("derivative-min");
-                                    // End 
                                     auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMin);
                                     auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMax);
                                     this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMax, false, false);
@@ -446,7 +442,6 @@ namespace storm {
                                     auto derivativeResultsMin = this->getBound(env, currRegion, OptimizationDirection::Minimize, nullptr)
                                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                                              .getValueVector();
-                                    // TODO NEXT THIS OUTPUTS THE WRONG THING!!!
                                     boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
                                     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
                                 }

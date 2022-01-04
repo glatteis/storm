@@ -5,7 +5,7 @@
 #include "storm-pars/api/region.h"
 #include "storm-pars/analysis/MonotonicityHelper.h"
 
-#include "storm-pars/derivative/DerivativeBoundFinder.h"
+#include "storm-pars/derivative/MonotonicityPLAChecker.h"
 #include "storm-pars/derivative/GradientDescentInstantiationSearcher.h"
 #include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
 #include "storm-pars/modelchecker/instantiation/SparseCtmcInstantiationModelChecker.h"
@@ -914,12 +914,12 @@ namespace storm {
                 auto dtmc = model->template as<storm::models::sparse::Dtmc<ValueType>>();
                 dtmc->reduceToStateBasedRewards();
                 storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
-                derivative::DerivativeBoundFinder<storm::RationalFunction, double> derivativeBoundFinder(*dtmc);
-                derivativeBoundFinder.specifyFormula(Environment(), checkTask);
+                derivative::MonotonicityPLAChecker<storm::RationalFunction, double> monPLAChecker(*dtmc);
+                monPLAChecker.specifyFormula(Environment(), checkTask);
                 for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
                     std::cout << "Doing Demo PLA w.r.t. " << parameter << std::endl;;
                     std::cout << "(Test conditions: aborting after 95% covered or 1000 regions computed)" << std::endl;;
-                    // derivativeBoundFinder.derivativePLASketch(Environment(), parameter, 0.05);
+                    monPLAChecker.performMonotonicityPLA(Environment(), parameter, 0.05);
                 }
             }
 
