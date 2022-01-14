@@ -368,12 +368,12 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult
 
 template<typename FunctionType, typename ConstantType>
 models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantType>::minimizeParameterCountInDTMC(models::sparse::Dtmc<FunctionType> dtmc) {
+    storage::SparseMatrix<FunctionType> transitionMatrix2 = model.getTransitionMatrix();
     storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
     
     // Repeat this algorithm until we can't mimimize anything anymore
     bool somethingChanged = true;
     
-    std::shared_ptr<storm::RawPolynomialCache> cache;
     while (somethingChanged) {
         somethingChanged = false;
         // Search backwards from parameters to where they join their paths
@@ -382,17 +382,20 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
         //
         // Maps are from state that is the last one before the parameter transition occurs
         std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::vector<uint_fast64_t>>> alreadyVisitedStates;
-        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::vector<ConstantType>>> talliedUpProbabilities;
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::vector<RationalNumber>>> talliedUpProbabilities;
         std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, bool>> doneSearching;
         // States visited from first with p to second
         std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, uint_fast64_t>> increasingSuccessors;
         // States visited from first with 1-p to second
         std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, uint_fast64_t>> decreasingSuccessors;
+        
+        // As I can't create my own, save the ps from the matrix to re-use them
+        std::map<storm::RationalFunctionVariable, FunctionType> pFunctions;
         uint_fast64_t numberOfSearchingTransitions = 0;
         auto allParameters = storm::models::sparse::getAllParameters(dtmc);
         for (auto const& parameter : allParameters) {
             alreadyVisitedStates[parameter] = std::map<uint_fast64_t, std::vector<uint_fast64_t>>();
-            talliedUpProbabilities[parameter] = std::map<uint_fast64_t, std::vector<ConstantType>>();
+            talliedUpProbabilities[parameter] = std::map<uint_fast64_t, std::vector<RationalNumber>>();
             increasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
             decreasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
         }
@@ -404,16 +407,17 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                 }
                 STORM_LOG_ASSERT(entry.getValue().gatherVariables().size() == 1, "Flip minimization only supports transitions with a single parameter.");
                 auto parameter = *entry.getValue().gatherVariables().begin();
-                cache = entry.getValue().nominatorAsPolynomial().pCache();
+                auto cache = entry.getValue().nominatorAsPolynomial().pCache();
                 FunctionType parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
                 if (entry.getValue() == parameterAsFunction) {
+                    pFunctions[parameter] = entry.getValue();
                     numberOfSearchingTransitions++;
                     auto parameter = entry.getValue().nominatorAsPolynomial().getSingleVariable();
                     STORM_LOG_ASSERT(alreadyVisitedStates[parameter].count(row) == 0, "Flip minimization only supports simple pMCs.");
                     alreadyVisitedStates[parameter][row] = std::vector<uint_fast64_t>();
                     alreadyVisitedStates[parameter][row].push_back(row);
-                    talliedUpProbabilities[parameter][row] = std::vector<ConstantType>();
-                    talliedUpProbabilities[parameter][row].push_back(utility::one<ConstantType>());
+                    talliedUpProbabilities[parameter][row] = std::vector<RationalNumber>();
+                    talliedUpProbabilities[parameter][row].push_back(utility::one<RationalNumber>());
                     increasingSuccessors[parameter][row] = entry.getColumn();
                     doneSearching[parameter][row] = false;
                 } else if (entry.getValue() == utility::one<FunctionType>() - parameterAsFunction) {
@@ -427,9 +431,9 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
         uint_fast64_t transitionsDoneSearching = 0;
         // Final results of the search: Sets of sets of states that we can transform together
         // The maps are <state where the paths join> -> <set of states that leads there, with this probability>
-        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::map<uint_fast64_t, ConstantType>>> joinedFirstStates;
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::map<uint_fast64_t, RationalNumber>>> joinedFirstStates;
         for (auto const& parameter : allParameters) {
-            joinedFirstStates[parameter] = std::map<uint_fast64_t, std::map<uint_fast64_t, ConstantType>>();
+            joinedFirstStates[parameter] = std::map<uint_fast64_t, std::map<uint_fast64_t, RationalNumber>>();
         }
         while (transitionsDoneSearching < numberOfSearchingTransitions) {
             for (auto const& pair : alreadyVisitedStates) {
@@ -455,7 +459,6 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                             entryFound = false;
                             break;
                         }
-                        std::cout << loopEntry << std::endl;
                         entry = loopEntry;
                         entryFound = true;
                     }
@@ -471,7 +474,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                         doneSearching[parameter][firstState] = true;
                         continue;
                     }
-                    auto constantProbability = utility::convertNumber<ConstantType>(entry.getValue());
+                    auto constantProbability = utility::convertNumber<RationalNumber>(entry.getValue());
                     auto currentState = entry.getColumn();
                     
                     // The next probability is the previous one times the considered tranistion
@@ -490,20 +493,18 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                         for (uint_fast64_t i = 0; i < otherVisitedStates.size(); i++) {
                             auto state = otherVisitedStates[i];
                             if (state == currentState) {
-                                // Wow!!! Another search of the same parameter has gotten here. Does it have the same probability?
-                                const ConstantType precision =
-                                storm::utility::convertNumber<ConstantType>(storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision());
+                                // Wow!!! Another search of the same parameter has gotten here.
                                 transitionsDoneSearching++;
                                 doneSearching[parameter][firstState] = true;
                                 transitionsDoneSearching++;
                                 doneSearching[parameter][otherFirstState] = true;
                                 
                                 if (!joinedFirstStates[parameter].count(state)) {
-                                    joinedFirstStates[parameter][state] = std::map<uint_fast64_t, ConstantType>();
+                                    joinedFirstStates[parameter][state] = std::map<uint_fast64_t, RationalNumber>();
                                 }
-                                ConstantType p1 = talliedUpProbabilities[parameter][firstState].back();
+                                RationalNumber p1 = talliedUpProbabilities[parameter][firstState].back();
                                 joinedFirstStates[parameter][state][firstState] = p1;
-                                ConstantType p2 = talliedUpProbabilities[parameter][otherFirstState][i];
+                                RationalNumber p2 = talliedUpProbabilities[parameter][otherFirstState][i];
                                 joinedFirstStates[parameter][state][otherFirstState] = p2;
 
                                 // We are all done. We can continue the search for the next, unrelated thing.
@@ -556,7 +557,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                 if (joinedFirstStates[parameter].count(row)) {
                     // We will join until these transitions
                     auto statesBeforeParams = joinedFirstStates[parameter][row];
-                    ConstantType summedProbability = 0;
+                    RationalNumber summedProbability = 0;
                     for (auto const& entry2 : statesBeforeParams) {
                         summedProbability += entry2.second;
                     }
@@ -585,11 +586,12 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                 }
             }
             
-            FunctionType parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
+            // FunctionType parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
+            FunctionType parameterAsFunction = pFunctions[parameter];
 
             for (auto const& pair : joinedFirstStates[parameter]) {
                 auto row = pair.first;
-                ConstantType summedProbability = 0;
+                RationalNumber summedProbability = 0;
                 for (auto const& entry2 : joinedFirstStates[parameter][row]) {
                     summedProbability += entry2.second;
                 }
@@ -601,7 +603,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                 std::priority_queue<std::pair<uint_fast64_t, FunctionType>, std::vector<std::pair<uint_fast64_t, FunctionType>>, std::greater<std::pair<uint_fast64_t, FunctionType>>> insertInOrder1;
                 for (auto const& pair2 : pair.second) {
                     auto id = pair2.first;
-                    ConstantType probability = pair2.second / summedProbability;
+                    RationalNumber probability = pair2.second / summedProbability;
                     auto increasingSuccessor = increasingSuccessors[parameter][id];
                     insertInOrder1.emplace(std::make_pair(increasingSuccessor, utility::convertNumber<FunctionType>(probability)));
                 }
@@ -614,7 +616,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                 std::priority_queue<std::pair<uint_fast64_t, FunctionType>, std::vector<std::pair<uint_fast64_t, FunctionType>>, std::greater<std::pair<uint_fast64_t, FunctionType>>> insertInOrder2;
                 for (auto const& pair2 : pair.second) {
                     auto id = pair2.first;
-                    ConstantType probability = pair2.second / summedProbability;
+                    RationalNumber probability = pair2.second / summedProbability;
                     auto decreasingSuccessor = decreasingSuccessors[parameter][id];
                     insertInOrder2.emplace(std::make_pair(decreasingSuccessor, utility::convertNumber<FunctionType>(probability)));
                 }
@@ -629,19 +631,20 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
         std::cout << wipMatrix << std::endl;
         transitionMatrix = wipMatrix;
         std::cout << transitionMatrix << std::endl;
-    }
 
-    models::sparse::StateLabeling stateLabeling(transitionMatrix.getRowCount());
-    for (uint_fast64_t state = 0; state < dtmc.getNumberOfStates(); state++) {
-        for (auto const& label : dtmc.getStateLabeling().getLabelsOfState(state)) {
-            stateLabeling.addLabel(label);
-            stateLabeling.addLabelToState(label, state);
+        models::sparse::StateLabeling stateLabeling(transitionMatrix.getRowCount());
+        for (uint_fast64_t state = 0; state < dtmc.getNumberOfStates(); state++) {
+            for (auto const& label : dtmc.getStateLabeling().getLabelsOfState(state)) {
+                stateLabeling.addLabel(label);
+                stateLabeling.addLabelToState(label, state);
+            }
         }
+        models::sparse::Dtmc<FunctionType> newDTMC(transitionMatrix, stateLabeling);
+        for (auto const& rewardModel : dtmc.getRewardModels()) {
+            newDTMC.addRewardModel(rewardModel.first, rewardModel.second);
+        }
+        dtmc = newDTMC;
     }
-    
-    models::sparse::Dtmc<FunctionType> newDTMC(transitionMatrix, stateLabeling);
-    std::cout << "NEW DTMC" << std::endl;
-    newDTMC.writeDotToStream(std::cout);
 
     return dtmc;
 
@@ -671,25 +674,25 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
 
     // Make a DTMC that is both reversed and missing the parametric transitions
     // auto const reverseTransitions = dtmc.getBackwardTransitions();
-    // storage::SparseMatrixBuilder<ConstantType> reverseTransitionsWithDeletedParametersBuilder;
+    // storage::SparseMatrixBuilder<RationalNumber> reverseTransitionsWithDeletedParametersBuilder;
     // for (uint_fast64_t row = 0; row < reverseTransitions.getRowCount(); row++) {
     //     for (storage::MatrixEntry<uint_fast64_t, FunctionType> const& entry : reverseTransitions.getRow(row)) {
     //         if (entry.getValue().isConstant()) {
-    //             reverseTransitionsWithDeletedParametersBuilder.addNextValue(row, entry.getColumn(), utility::convertNumber<ConstantType>(entry.getValue()));
+    //             reverseTransitionsWithDeletedParametersBuilder.addNextValue(row, entry.getColumn(), utility::convertNumber<RationalNumber>(entry.getValue()));
     //         }
     //     }
     // }
     // auto reverseTransitionsWithDeletedParametersMatrix = reverseTransitionsWithDeletedParametersBuilder.build();
-    // models::sparse::Dtmc<ConstantType> reverseTransitionsWithDeletedParameters(reverseTransitionsWithDeletedParametersMatrix, dtmc.getStateLabeling());
+    // models::sparse::Dtmc<RationalNumber> reverseTransitionsWithDeletedParameters(reverseTransitionsWithDeletedParametersMatrix, dtmc.getStateLabeling());
     
     // auto subformulaConstructor = std::make_shared<logic::AtomicLabelFormula>("init");
     // auto subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Probability, boost::none);
     // auto formula = std::make_shared<storm::logic::ProbabilityOperatorFormula>(subformula, this->formulaOperatorInformation);
-    // auto checkTask = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, ConstantType>>(*formula);
+    // auto checkTask = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, RationalNumber>>(*formula);
     
-    // modelchecker::SparseDtmcPrctlModelChecker<models::sparse::Dtmc<ConstantType>> modelChecker(reverseTransitionsWithDeletedParameters);
+    // modelchecker::SparseDtmcPrctlModelChecker<models::sparse::Dtmc<RationalNumber>> modelChecker(reverseTransitionsWithDeletedParameters);
     // auto results = modelChecker.check(Environment(), *checkTask);
-    // auto resultVector = results->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+    // auto resultVector = results->template asExplicitQuantitativeCheckResult<RationalNumber>().getValueVector();
     // for (auto const& entry : resultVector) {
     //     std::cout << entry << std::endl;
     // }

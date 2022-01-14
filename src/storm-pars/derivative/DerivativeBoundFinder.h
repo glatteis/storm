@@ -11,7 +11,9 @@
 #include "storm-pars/analysis/MonotonicityResult.h"
 #include "storm-pars/transformer/ParameterLifter.h"
 #include "storm-pars/utility/parametric.h"
+#include "storm-pars/transformer/SparseParametricDtmcSimplifier.h"
 #include "utility/macros.h"
+#include "api/bisimulation.h"
 namespace storm {
 namespace derivative {
 
@@ -20,7 +22,6 @@ class DerivativeBoundFinder {
    public:
     DerivativeBoundFinder<FunctionType, ConstantType>(storm::models::sparse::Dtmc<FunctionType> const model) : model(model) {
         model.writeDotToStream(std::cout);
-        // minimizeParameterCountInDTMC(model);
     }
 
     void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask) {
@@ -72,6 +73,16 @@ class DerivativeBoundFinder {
                 this->parameters.insert(rewardParameter);
             }
         }
+
+        model = minimizeParameterCountInDTMC(model);
+        std::cout << "NEW DTMC BEFORE MINIMIZING" << std::endl;
+        model.writeDotToStream(std::cout);
+        storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
+        STORM_LOG_ASSERT(simplifier.simplify(*this->currentFormulaNoBound), "Could not simplify model.");
+        auto modelPtr = simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
+        model = *storm::api::performDeterministicSparseBisimulationMinimization(modelPtr, {this->currentFormulaNoBound}, storage::BisimulationType::Weak);
+        std::cout << "NEW DTMC" << std::endl;
+        model.writeDotToStream(std::cout);
     }
 
     std::pair<std::pair<models::sparse::Dtmc<FunctionType>, models::sparse::Dtmc<FunctionType>>,
@@ -113,7 +124,7 @@ class DerivativeBoundFinder {
     /* std::shared_ptr<storm::logic::EventuallyFormula const> subformula; */
     logic::OperatorInformation formulaOperatorInformation;
 
-    const models::sparse::Dtmc<FunctionType> model;
+    models::sparse::Dtmc<FunctionType> model;
     std::set<typename utility::parametric::VariableType<FunctionType>::type> parameters;
 };
 
