@@ -1,17 +1,35 @@
 #include "DerivativeBoundFinder.h"
 #include <_types/_uint64_t.h>
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <queue>
+#include "adapters/RationalFunctionAdapter.h"
+#include "api/bisimulation.h"
 #include "logic/FormulasForwardDeclarations.h"
+#include "logic/ProbabilityOperatorFormula.h"
+#include "logic/UntilFormula.h"
+#include "modelchecker/prctl/SparseDtmcPrctlModelChecker.h"
 #include "modelchecker/propositional/SparsePropositionalModelChecker.h"
 #include "modelchecker/results/CheckResult.h"
 #include "modelchecker/results/ExplicitQualitativeCheckResult.h"
 #include "models/sparse/Dtmc.h"
+#include "models/sparse/ItemLabeling.h"
+#include "models/sparse/Model.h"
+#include "models/sparse/StateLabeling.h"
 #include "settings/modules/GeneralSettings.h"
+#include "storage/BitVector.h"
+#include "storage/SparseMatrix.h"
+#include "storage/bisimulation/BisimulationType.h"
 #include "storm-pars/analysis/MonotonicityResult.h"
+#include "storm-pars/modelchecker/instantiation/SparseDtmcInstantiationModelChecker.h"
+#include "storm-pars/transformer/SparseParametricDtmcSimplifier.h"
 #include "storm-pars/utility/parametric.h"
 #include "storm-parsers/parser/FormulaParser.h"
+#include "utility/constants.h"
 #include "utility/graph.h"
+#include "utility/macros.h"
+#include "modelchecker/results/ExplicitQuantitativeCheckResult.h"
 
 namespace storm {
 namespace derivative {
@@ -164,15 +182,12 @@ using CoefficientType = typename utility::parametric::CoefficientType<FunctionTy
 // }
 
 template<typename FunctionType, typename ConstantType>
-std::pair<models::sparse::Dtmc<FunctionType>, std::pair<std::shared_ptr<storm::logic::Formula>,
-                                                        std::shared_ptr<storm::logic::Formula>>>
+std::pair<std::pair<models::sparse::Dtmc<FunctionType>, models::sparse::Dtmc<FunctionType>>,
+          std::pair<std::shared_ptr<storm::logic::Formula>, std::shared_ptr<storm::logic::Formula>>>
 DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region, std::vector<ConstantType> minValues,
-    std::vector<ConstantType> maxValues,
-    std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType<FunctionType>>> localMonotonicityResult,
-    VariableType<FunctionType> const& parameter
-) {
-
+    std::vector<ConstantType> maxValues, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType<FunctionType>>> localMonotonicityResult,
+    VariableType<FunctionType> const& parameter) {
     auto const sharedModelPointer = std::make_shared<storm::models::sparse::Dtmc<FunctionType>>(model);
     // this->liftingModelChecker->specify_internal(env, sharedModelPointer, *this->currentCheckTaskNoBound, false, true);
 
@@ -249,7 +264,28 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     modelCopy.addRewardModel("derivative-min", rewardModelMin);
 
     storm::modelchecker::SparsePropositionalModelChecker<models::sparse::Dtmc<FunctionType>> propositionalChecker(modelCopy);
-    storm::storage::BitVector target = std::move(propositionalChecker.check(*this->currentSubformula)->asExplicitQualitativeCheckResult().getTruthValuesVector());
+    storage::BitVector phiStates;
+    storage::BitVector psiStates;
+    if (this->currentFormula->asProbabilityOperatorFormula().getSubformula().isUntilFormula()) {
+        phiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula())
+                        ->asExplicitQualitativeCheckResult()
+                        .getTruthValuesVector();
+        psiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getRightSubformula())
+                        ->asExplicitQualitativeCheckResult()
+                        .getTruthValuesVector();
+    } else {
+        STORM_LOG_ASSERT(this->currentFormula->asProbabilityOperatorFormula().getSubformula().isEventuallyFormula(),
+                         "Expecting formula to be until or eventually formula");
+        phiStates = storage::BitVector(modelCopy.getNumberOfStates(), true);
+        psiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula())
+                        ->asExplicitQualitativeCheckResult()
+                        .getTruthValuesVector();
+    }
+    std::pair<storage::BitVector, storage::BitVector> statesWithProbability01 =
+        utility::graph::performProb01(modelCopy.getBackwardTransitions(), phiStates, psiStates);
+    storage::BitVector target = statesWithProbability01.second;
+    storage::BitVector bottomStates = statesWithProbability01.first;
+
     storm::storage::BitVector newTarget(target.size());
 
     if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
@@ -281,22 +317,40 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
 
     auto formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-max"), this->formulaOperatorInformation);
     auto formulaMin = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-min"), this->formulaOperatorInformation);
-    
-    return std::make_pair(modelCopy, std::make_pair(formulaMin, formulaMax));
+
+    storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(modelCopy);
+
+    STORM_LOG_ASSERT(simplifier.simplify(*formulaMax), "Could not simplify derivative model.");
+    auto modelMax = simplifier.getSimplifiedModel();
+
+    STORM_LOG_ASSERT(simplifier.simplify(*formulaMin), "Could not simplify derivative model.");
+    auto modelMin = simplifier.getSimplifiedModel();
+
+    modelMax = storm::api::performDeterministicSparseBisimulationMinimization(modelMax, {formulaMax}, storage::BisimulationType::Weak);
+    modelMin = storm::api::performDeterministicSparseBisimulationMinimization(modelMin, {formulaMin}, storage::BisimulationType::Weak);
+
+    // std::cout << parameter << std::endl;
+    // std::cout << "Model copy:" << std::endl;
+    // modelCopy.writeDotToStream(std::cout, 30, true, nullptr, &modelCopy.getRewardModel("derivative-min").getStateRewardVector(),
+    //                            &modelCopy.getRewardModel("derivative-max").getStateRewardVector());
+    // std::cout << "Model max:" << std::endl;
+    // modelMax->writeDotToStream(std::cout, 30, true, nullptr, &modelMax->getUniqueRewardModel().getStateRewardVector());
+    // std::cout << "Model min:" << std::endl;
+    // modelMin->writeDotToStream(std::cout, 30, true, nullptr, &modelMin->getUniqueRewardModel().getStateRewardVector());
+
+    return std::make_pair(std::make_pair(*modelMax, *modelMin), std::make_pair(formulaMin, formulaMax));
 }
-        
+
 template<typename FunctionType, typename ConstantType>
-void
-DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult(
+void DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult(
     std::vector<ConstantType> derivativeMinValues, std::vector<ConstantType> derivativeMaxValues,
     std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
-    VariableType<FunctionType> const& parameter,
-    uint_fast64_t initialState
-) {
+    VariableType<FunctionType> const& parameter, uint_fast64_t initialState) {
+    std::cout << derivativeMinValues[initialState] << " <= d" << parameter << " <= " << derivativeMaxValues[initialState] << std::endl;
     boost::optional<typename analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity> finalResult;
-    if (derivativeMaxValues[initialState] < -1e-6) {
+    if (derivativeMaxValues[initialState] < 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Decr;
-    } else if (derivativeMinValues[initialState] > 1e-6) {
+    } else if (derivativeMinValues[initialState] > 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Incr;
     } else if (derivativeMaxValues[initialState] == 0 && derivativeMinValues[initialState] == 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Constant;
@@ -312,6 +366,334 @@ DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult(
     }
 }
 
+template<typename FunctionType, typename ConstantType>
+models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantType>::minimizeParameterCountInDTMC(models::sparse::Dtmc<FunctionType> dtmc) {
+    storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
+    
+    // Repeat this algorithm until we can't mimimize anything anymore
+    bool somethingChanged = true;
+    
+    std::shared_ptr<storm::RawPolynomialCache> cache;
+    while (somethingChanged) {
+        somethingChanged = false;
+        // Search backwards from parameters to where they join their paths
+        // Tally up the probabilities
+        // Multiple backwards transitions not supported yet
+        //
+        // Maps are from state that is the last one before the parameter transition occurs
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::vector<uint_fast64_t>>> alreadyVisitedStates;
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::vector<ConstantType>>> talliedUpProbabilities;
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, bool>> doneSearching;
+        // States visited from first with p to second
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, uint_fast64_t>> increasingSuccessors;
+        // States visited from first with 1-p to second
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, uint_fast64_t>> decreasingSuccessors;
+        uint_fast64_t numberOfSearchingTransitions = 0;
+        auto allParameters = storm::models::sparse::getAllParameters(dtmc);
+        for (auto const& parameter : allParameters) {
+            alreadyVisitedStates[parameter] = std::map<uint_fast64_t, std::vector<uint_fast64_t>>();
+            talliedUpProbabilities[parameter] = std::map<uint_fast64_t, std::vector<ConstantType>>();
+            increasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
+            decreasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
+        }
+        // Search for all occurences of parameters and fill up the maps
+        for (uint_fast64_t row = 0; row < transitionMatrix.getRowCount(); row++) {
+            for (auto const& entry : transitionMatrix.getRow(row)) {
+                if (entry.getValue().isConstant()) {
+                    continue;
+                }
+                STORM_LOG_ASSERT(entry.getValue().gatherVariables().size() == 1, "Flip minimization only supports transitions with a single parameter.");
+                auto parameter = *entry.getValue().gatherVariables().begin();
+                cache = entry.getValue().nominatorAsPolynomial().pCache();
+                FunctionType parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
+                if (entry.getValue() == parameterAsFunction) {
+                    numberOfSearchingTransitions++;
+                    auto parameter = entry.getValue().nominatorAsPolynomial().getSingleVariable();
+                    STORM_LOG_ASSERT(alreadyVisitedStates[parameter].count(row) == 0, "Flip minimization only supports simple pMCs.");
+                    alreadyVisitedStates[parameter][row] = std::vector<uint_fast64_t>();
+                    alreadyVisitedStates[parameter][row].push_back(row);
+                    talliedUpProbabilities[parameter][row] = std::vector<ConstantType>();
+                    talliedUpProbabilities[parameter][row].push_back(utility::one<ConstantType>());
+                    increasingSuccessors[parameter][row] = entry.getColumn();
+                    doneSearching[parameter][row] = false;
+                } else if (entry.getValue() == utility::one<FunctionType>() - parameterAsFunction) {
+                    decreasingSuccessors[parameter][row] = entry.getColumn();
+                } else {
+                    STORM_LOG_ASSERT(false, "Flip minimization only supports simple pMCs.");
+                }
+            }
+        }
+        // Step by step, do a backwards search
+        uint_fast64_t transitionsDoneSearching = 0;
+        // Final results of the search: Sets of sets of states that we can transform together
+        // The maps are <state where the paths join> -> <set of states that leads there, with this probability>
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::map<uint_fast64_t, ConstantType>>> joinedFirstStates;
+        for (auto const& parameter : allParameters) {
+            joinedFirstStates[parameter] = std::map<uint_fast64_t, std::map<uint_fast64_t, ConstantType>>();
+        }
+        while (transitionsDoneSearching < numberOfSearchingTransitions) {
+            for (auto const& pair : alreadyVisitedStates) {
+                auto parameter = pair.first;
+                auto visitedStateMap = pair.second;
+                // Step one step back for parameter and firstState
+                for (auto const& pair2 : visitedStateMap) {
+                    auto firstState = pair2.first;
+                    auto visitedStates = pair2.second;
+                    if (doneSearching[parameter][firstState]) {
+                        continue;
+                    }
+                    auto row = dtmc.getBackwardTransitions().getRow(visitedStates.back());
+                    
+                    storage::MatrixEntry<uint_fast64_t, FunctionType> entry;
+                    bool entryFound = false;
+                    for (auto const& loopEntry : row) {
+                        if (loopEntry.getValue().isZero()) {
+                            continue;
+                        }
+                        // We only support one backlink per state for now
+                        if (entryFound) {
+                            entryFound = false;
+                            break;
+                        }
+                        std::cout << loopEntry << std::endl;
+                        entry = loopEntry;
+                        entryFound = true;
+                    }
+                    if (!entryFound) {
+                        transitionsDoneSearching++;
+                        doneSearching[parameter][firstState] = true;
+                        continue;
+                    }
+
+                    // Only search until another parametric transition occurs, then we can't continue anymore
+                    if (!entry.getValue().isConstant()) {
+                        transitionsDoneSearching++;
+                        doneSearching[parameter][firstState] = true;
+                        continue;
+                    }
+                    auto constantProbability = utility::convertNumber<ConstantType>(entry.getValue());
+                    auto currentState = entry.getColumn();
+                    
+                    // The next probability is the previous one times the considered tranistion
+                    talliedUpProbabilities[parameter][firstState].push_back(talliedUpProbabilities[parameter][firstState].back() * constantProbability);
+                    alreadyVisitedStates[parameter][firstState].push_back(currentState);
+
+                    // Check if any search of the same parameter has already gotten here
+                    for (auto const& pair3 : alreadyVisitedStates[parameter]) {
+                        auto otherFirstState = pair3.first;
+                        if (otherFirstState == firstState) {
+                            continue;
+                        }
+                        auto otherVisitedStates = pair3.second;
+                        // TODO maybe use a set if this is too slow
+                        bool done = false;
+                        for (uint_fast64_t i = 0; i < otherVisitedStates.size(); i++) {
+                            auto state = otherVisitedStates[i];
+                            if (state == currentState) {
+                                // Wow!!! Another search of the same parameter has gotten here. Does it have the same probability?
+                                const ConstantType precision =
+                                storm::utility::convertNumber<ConstantType>(storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision());
+                                transitionsDoneSearching++;
+                                doneSearching[parameter][firstState] = true;
+                                transitionsDoneSearching++;
+                                doneSearching[parameter][otherFirstState] = true;
+                                
+                                if (!joinedFirstStates[parameter].count(state)) {
+                                    joinedFirstStates[parameter][state] = std::map<uint_fast64_t, ConstantType>();
+                                }
+                                ConstantType p1 = talliedUpProbabilities[parameter][firstState].back();
+                                joinedFirstStates[parameter][state][firstState] = p1;
+                                ConstantType p2 = talliedUpProbabilities[parameter][otherFirstState][i];
+                                joinedFirstStates[parameter][state][otherFirstState] = p2;
+
+                                // We are all done. We can continue the search for the next, unrelated thing.
+                                done = true;
+                                break;
+                            }
+                        }
+                        if (done) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check if we found any parameters that we can join into one transition, and if so, do it
+        for (auto const& parameter : allParameters) {
+            if (joinedFirstStates[parameter].size() > 0) {
+                somethingChanged = true;
+                break;
+            }
+        }
+        if (!somethingChanged) {
+            break;
+        }
+
+        storage::SparseMatrix<FunctionType> wipMatrix(transitionMatrix); 
+        for (auto const& parameter : allParameters) {
+            // We add three new states to the DTMC for this procedure for every state where parameters join
+            if (joinedFirstStates[parameter].size() == 0) {
+                continue;
+            }
+            uint_fast64_t runningCounter = wipMatrix.getRowCount();
+
+            std::map<uint_fast64_t, std::vector<uint_fast64_t>> newStates;
+            for (auto const& pair : joinedFirstStates[parameter]) {
+                // The state that will come before the parametric flip
+                auto firstNewState = runningCounter;
+                // The state after p 
+                auto secondNewState = runningCounter + 1;
+                // The state after 1-p
+                auto thirdNewState = runningCounter + 2;
+                newStates[pair.first] = {firstNewState, secondNewState, thirdNewState};
+                runningCounter += 3;
+            }
+
+            storage::SparseMatrixBuilder<FunctionType> builder;
+            for (uint_fast64_t row = 0; row < wipMatrix.getRowCount(); row++) {
+                // If from row, we are starting with a transition we will flip...
+                if (joinedFirstStates[parameter].count(row)) {
+                    // We will join until these transitions
+                    auto statesBeforeParams = joinedFirstStates[parameter][row];
+                    ConstantType summedProbability = 0;
+                    for (auto const& entry2 : statesBeforeParams) {
+                        summedProbability += entry2.second;
+                    }
+                    // Add the rest of the transitions before, because we need to preserve order
+                    for (auto const& entry : wipMatrix.getRow(row)) {
+                        // If this state was (the second last) visited in any of the joinedFirstStates, do not add it
+                        // Else add it
+                        bool addState = true;
+                        for (auto const& pair : statesBeforeParams) {
+                            auto id = pair.first;
+                            auto visitedStates = alreadyVisitedStates[parameter][id];
+                            if (std::find(visitedStates.begin(), visitedStates.end(), entry.getColumn()) != visitedStates.end()) {
+                                // This state was visited in id's path and we have thus joined it above, so don't add it
+                                addState = false;
+                            }
+                        }
+                        if (addState) {
+                            builder.addNextValue(row, entry.getColumn(), entry.getValue());
+                        }
+                    }
+                    builder.addNextValue(row, newStates[row][0], utility::convertNumber<FunctionType>(summedProbability));
+                } else { // Else, just add the stuff back into the matrix
+                    for (auto const& entry : wipMatrix.getRow(row)) {
+                        builder.addNextValue(row, entry.getColumn(), entry.getValue());
+                    }
+                }
+            }
+            
+            FunctionType parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
+
+            for (auto const& pair : joinedFirstStates[parameter]) {
+                auto row = pair.first;
+                ConstantType summedProbability = 0;
+                for (auto const& entry2 : joinedFirstStates[parameter][row]) {
+                    summedProbability += entry2.second;
+                }
+                // Add parametric transitions 
+                builder.addNextValue(newStates[row][0], newStates[row][1], parameterAsFunction);
+                builder.addNextValue(newStates[row][0], newStates[row][2], utility::one<FunctionType>() - parameterAsFunction);
+                
+                // Add transitions from p and 1-p states to actual successors
+                std::priority_queue<std::pair<uint_fast64_t, FunctionType>, std::vector<std::pair<uint_fast64_t, FunctionType>>, std::greater<std::pair<uint_fast64_t, FunctionType>>> insertInOrder1;
+                for (auto const& pair2 : pair.second) {
+                    auto id = pair2.first;
+                    ConstantType probability = pair2.second / summedProbability;
+                    auto increasingSuccessor = increasingSuccessors[parameter][id];
+                    insertInOrder1.emplace(std::make_pair(increasingSuccessor, utility::convertNumber<FunctionType>(probability)));
+                }
+                while (!insertInOrder1.empty()) {
+                    auto pair = insertInOrder1.top();
+                    insertInOrder1.pop();
+                    builder.addNextValue(newStates[row][1], pair.first, pair.second);
+                }
+                
+                std::priority_queue<std::pair<uint_fast64_t, FunctionType>, std::vector<std::pair<uint_fast64_t, FunctionType>>, std::greater<std::pair<uint_fast64_t, FunctionType>>> insertInOrder2;
+                for (auto const& pair2 : pair.second) {
+                    auto id = pair2.first;
+                    ConstantType probability = pair2.second / summedProbability;
+                    auto decreasingSuccessor = decreasingSuccessors[parameter][id];
+                    insertInOrder2.emplace(std::make_pair(decreasingSuccessor, utility::convertNumber<FunctionType>(probability)));
+                }
+                while (!insertInOrder2.empty()) {
+                    auto pair = insertInOrder2.top();
+                    insertInOrder2.pop();
+                    builder.addNextValue(newStates[row][2], pair.first, pair.second);
+                }
+            }
+            wipMatrix = builder.build();
+        }
+        std::cout << wipMatrix << std::endl;
+        transitionMatrix = wipMatrix;
+        std::cout << transitionMatrix << std::endl;
+    }
+
+    models::sparse::StateLabeling stateLabeling(transitionMatrix.getRowCount());
+    for (uint_fast64_t state = 0; state < dtmc.getNumberOfStates(); state++) {
+        for (auto const& label : dtmc.getStateLabeling().getLabelsOfState(state)) {
+            stateLabeling.addLabel(label);
+            stateLabeling.addLabelToState(label, state);
+        }
+    }
+    
+    models::sparse::Dtmc<FunctionType> newDTMC(transitionMatrix, stateLabeling);
+    std::cout << "NEW DTMC" << std::endl;
+    newDTMC.writeDotToStream(std::cout);
+
+    return dtmc;
+
+
+    // Do a DFS and search for occuring parameters, stop there
+    // storage::BitVector currentStates = model.getInitialStates();
+    // storage::BitVector visitedStates(currentStates.size());
+    // std::vector<FunctionType> constantProbabilities(currentStates.size(), utility::one<FunctionType>());
+    // while (!currentStates.empty()) {
+    //     for (uint_fast64_t state : currentStates) {
+    //         storage::BitVector additionalStates;
+    //         for (storage::MatrixEntry<uint_fast64_t, FunctionType> const& entry : transitionMatrix.getRow(state)) {
+    //             FunctionType value = entry.getValue();
+    //             uint_fast64_t nextState = entry.getColumn();
+    //             if (value.isConstant() && !visitedStates.get(nextState)) {
+    //                 additionalStates.set(nextState, true);
+    //                 constantProbabilities[nextState] *=
+    //             }
+    //         }
+    //         currentStates.set(state, false);
+    //         visitedStates.set(state, true);
+    //         currentStates |= additionalStates;
+    //     }
+    // }
+    // What have you found? Maybe some nice transitions that we can join?
+    
+
+    // Make a DTMC that is both reversed and missing the parametric transitions
+    // auto const reverseTransitions = dtmc.getBackwardTransitions();
+    // storage::SparseMatrixBuilder<ConstantType> reverseTransitionsWithDeletedParametersBuilder;
+    // for (uint_fast64_t row = 0; row < reverseTransitions.getRowCount(); row++) {
+    //     for (storage::MatrixEntry<uint_fast64_t, FunctionType> const& entry : reverseTransitions.getRow(row)) {
+    //         if (entry.getValue().isConstant()) {
+    //             reverseTransitionsWithDeletedParametersBuilder.addNextValue(row, entry.getColumn(), utility::convertNumber<ConstantType>(entry.getValue()));
+    //         }
+    //     }
+    // }
+    // auto reverseTransitionsWithDeletedParametersMatrix = reverseTransitionsWithDeletedParametersBuilder.build();
+    // models::sparse::Dtmc<ConstantType> reverseTransitionsWithDeletedParameters(reverseTransitionsWithDeletedParametersMatrix, dtmc.getStateLabeling());
+    
+    // auto subformulaConstructor = std::make_shared<logic::AtomicLabelFormula>("init");
+    // auto subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Probability, boost::none);
+    // auto formula = std::make_shared<storm::logic::ProbabilityOperatorFormula>(subformula, this->formulaOperatorInformation);
+    // auto checkTask = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, ConstantType>>(*formula);
+    
+    // modelchecker::SparseDtmcPrctlModelChecker<models::sparse::Dtmc<ConstantType>> modelChecker(reverseTransitionsWithDeletedParameters);
+    // auto results = modelChecker.check(Environment(), *checkTask);
+    // auto resultVector = results->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+    // for (auto const& entry : resultVector) {
+    //     std::cout << entry << std::endl;
+    // }
+}
 
 template class DerivativeBoundFinder<RationalFunction, RationalNumber>;
 template class DerivativeBoundFinder<RationalFunction, double>;

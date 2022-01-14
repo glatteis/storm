@@ -676,7 +676,7 @@ namespace storm {
                     std::cout << "Derivative w.r.t. " << parameter << ": ";
                     
                     auto result = modelChecker.check(Environment(), instantiation, parameter);
-                    std::cout << *result << std::endl;
+                    std::cout << result->getValueVector()[initialState] << std::endl;
                 }
                 return;
             } else if (derSettings.isFeasibleInstantiationSearchSet()) {
@@ -990,6 +990,7 @@ namespace storm {
             auto buildSettings = storm::settings::getModule<storm::settings::modules::BuildSettings>();
             auto parSettings = storm::settings::getModule<storm::settings::modules::ParametricSettings>();
             auto monSettings = storm::settings::getModule<storm::settings::modules::MonotonicitySettings>();
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
 
             STORM_LOG_THROW(mpi.engine == storm::utility::Engine::Sparse || mpi.engine == storm::utility::Engine::Hybrid || mpi.engine == storm::utility::Engine::Dd, storm::exceptions::InvalidSettingsException, "The selected engine is not supported for parametric models.");
 
@@ -1070,7 +1071,10 @@ namespace storm {
                                     model->as<storm::models::sparse::Model<ValueType>>()));
                 }
 // TODO: is onlyGlobalSet was used here
-                verifyParametricModel<DdType, ValueType>(model, input, regions, samples, storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false, monSettings.isUsePLABoundsSet()), monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
+                verifyParametricModel<DdType, ValueType>(model, input, regions, samples,
+                                                         storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false,
+                                                                                         monSettings.isUsePLABoundsSet(), regionSettings.getMonotonicityType()),
+                                                         monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
             }
         }
 

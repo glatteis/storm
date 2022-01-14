@@ -1,4 +1,3 @@
-#include <storm-pars/modelchecker/region/RegionResultHypothesis.h>
 #include "storm-pars/settings/modules/RegionSettings.h"
 
 #include "storm/settings/SettingsManager.h"
@@ -28,6 +27,7 @@ namespace storm {
             const std::string RegionSettings::checkEngineOptionName = "engine";
             const std::string RegionSettings::printNoIllustrationOptionName = "noillustration";
             const std::string RegionSettings::printFullResultOptionName = "printfullresult";
+            const std::string RegionSettings::monotonicityTypeOptionName = "monotonicitytype";
 
             RegionSettings::RegionSettings() : ModuleSettings(moduleName) {
                 this->addOption(storm::settings::OptionBuilder(moduleName, regionOptionName, false, "Sets the region(s) considered for analysis.").setShortName(regionShortOptionName)
@@ -62,6 +62,18 @@ namespace storm {
                 this->addOption(storm::settings::OptionBuilder(moduleName, printNoIllustrationOptionName, false, "If set, no illustration of the result is printed.").build());
 
                 this->addOption(storm::settings::OptionBuilder(moduleName, printFullResultOptionName, false, "If set, the full result for every region is printed.").build());
+
+                // TODO Move this to MonotonicitySettings
+                std::vector<std::string> monotonicitySettings = {"graph", "lifting"};
+                this->addOption(
+                    storm::settings::OptionBuilder(moduleName, monotonicityTypeOptionName, true,
+                                                   "Sets which type of monotonicity is used (if --use-monotonicity is set). Options are graph (graph-based "
+                                                   "standard monotonicity checking) or lifting (derivative-based parameter lifting monotonicity checking).")
+                        .addArgument(storm::settings::ArgumentBuilder::createStringArgument("name", "The name of the type of monotonicity.")
+                                         .addValidatorString(ArgumentValidatorFactory::createMultipleChoiceValidator(monotonicitySettings))
+                                         .setDefaultValueString("graph")
+                                         .build())
+                        .build());
             }
 
             bool RegionSettings::isRegionSet() const {
@@ -166,6 +178,19 @@ namespace storm {
                     STORM_LOG_THROW(false, storm::exceptions::IllegalArgumentValueException, "Unknown region check engine '" << engineString << "'.");
                 }
 
+                return result;
+            }
+
+            storm::modelchecker::MonotonicityType RegionSettings::getMonotonicityType() const {
+                std::string monotonicityString = this->getOption(monotonicityTypeOptionName).getArgumentByName("name").getValueAsString();
+                storm::modelchecker::MonotonicityType result;
+                if (monotonicityString == "graph") {
+                    result = storm::modelchecker::MonotonicityType::GRAPH;
+                } else if (monotonicityString == "lifting") {
+                    result = storm::modelchecker::MonotonicityType::LIFTING;
+                } else {
+                    STORM_LOG_THROW(false, storm::exceptions::IllegalArgumentValueException, "Unknown region check engine '" << monotonicityString << "'.");
+                }
                 return result;
             }
 

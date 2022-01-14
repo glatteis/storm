@@ -399,7 +399,7 @@ namespace storm {
                                     STORM_LOG_INFO("Order and monotonicity result got extended");
                                 }
                             } else if (useDerivativeMonotonicity) {
-                                std::cout << "Computing derivative monotonicity..." << std::endl;
+                                std::cout << "Computing derivative monotonicity for" << currRegion << std::endl;
                                 numberOfPLACallsBounds++;
                                 std::vector<ConstantType> minBound;
                                 std::vector<ConstantType> maxBound;
@@ -425,27 +425,30 @@ namespace storm {
                                     if (globalMonotonicity != Monotonicity::Unknown) {
                                         continue;
                                     }
+
                                     auto derivativeCheckStuff = boundFinder->computeMonotonicityTasks(
                                         env, currRegion, minBound, maxBound, localMonotonicityResult, parameter
                                     );
-                                    auto model = derivativeCheckStuff.first;
+                                    auto modelMax = derivativeCheckStuff.first.first;
+                                    auto modelMin = derivativeCheckStuff.first.second;
                                     auto formulaMin = derivativeCheckStuff.second.first;
                                     auto formulaMax = derivativeCheckStuff.second.second;
                                     
                                     auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMin);
                                     auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMax);
-                                    this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMax, false, false);
+                                    this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(modelMax), *checkTaskMax,
+                                                  false, false);
                                     auto derivativeResultsMax = this->getBound(env, currRegion, OptimizationDirection::Maximize, nullptr)
                                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                                              .getValueVector();
-                                    this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(model), *checkTaskMin, false, false);
+                                    this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(modelMin), *checkTaskMin,
+                                                  false, false);
                                     auto derivativeResultsMin = this->getBound(env, currRegion, OptimizationDirection::Minimize, nullptr)
                                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                                              .getValueVector();
                                     boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
                                     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
                                 }
-                                std::cout << localMonotonicityResult->toString() << std::endl;
                                 std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
                                 this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                             }

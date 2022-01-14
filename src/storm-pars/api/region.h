@@ -32,10 +32,16 @@ namespace storm {
 
     namespace api {
         struct MonotonicitySetting {
-            MonotonicitySetting(bool a = false, bool b = false, bool c = false) { useMonotonicity = a; useOnlyGlobalMonotonicity = b; useBoundsFromPLA = c;}
+            MonotonicitySetting(bool a = false, bool b = false, bool c = false, modelchecker::MonotonicityType d = modelchecker::MonotonicityType::GRAPH) {
+                useMonotonicity = a;
+                useOnlyGlobalMonotonicity = b;
+                useBoundsFromPLA = c;
+                monotonicityType = d;
+            }
             bool useMonotonicity;
             bool useOnlyGlobalMonotonicity;
             bool useBoundsFromPLA;
+            modelchecker::MonotonicityType monotonicityType;
         };
 
         template <typename ValueType>
@@ -140,6 +146,7 @@ namespace storm {
                 checker->setUseMonotonicity(monotonicitySetting.useMonotonicity);
                 checker->setUseOnlyGlobal(monotonicitySetting.useOnlyGlobalMonotonicity);
                 checker->setUseBounds(monotonicitySetting.useBoundsFromPLA);
+                checker->setMonotonicityType(monotonicitySetting.monotonicityType);
                 if (monotonicitySetting.useMonotonicity && monotoneParameters) {
                     checker->setMonotoneParameters(monotoneParameters.get());
                 }

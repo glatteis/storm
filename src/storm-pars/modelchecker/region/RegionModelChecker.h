@@ -107,10 +107,9 @@ namespace storm {
             bool useMonotonicity = false;
             bool useOnlyGlobal = false;
             bool useBounds = false;
-            MonotonicityType monotonicityType = MonotonicityType::LIFTING; // TODO make configurable
+            MonotonicityType monotonicityType = MonotonicityType::GRAPH;
 
-        protected:
-
+           protected:
             uint_fast64_t numberOfRegionsKnownThroughMonotonicity;
             boost::optional<std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>> monotoneIncrParameters;
             boost::optional<std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>> monotoneDecrParameters;

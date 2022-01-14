@@ -26,17 +26,18 @@ MonotonicityPLAChecker<FunctionType, ConstantType>::getDerivativeBound(Environme
                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                              .getValueVector();
     auto derivativeCheckStuff = boundFinder.computeMonotonicityTasks(env, currRegion, minBound, maxBound, nullptr, parameter);
-    auto model = derivativeCheckStuff.first;
+    auto modelMax = derivativeCheckStuff.first.first;
+    auto modelMin = derivativeCheckStuff.first.second;
     auto formulaMin = derivativeCheckStuff.second.first;
     auto formulaMax = derivativeCheckStuff.second.second;
 
     auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMin);
     auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
-    modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(model), *checkTaskMax, false, false);
+    modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(modelMax), *checkTaskMax, false, false);
     auto derivativeResultsMax = modelChecker.getBound(env, currRegion, OptimizationDirection::Maximize, nullptr)
                                     ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                     .getValueVector();
-    modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(model), *checkTaskMin, false, false);
+    modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(modelMin), *checkTaskMin, false, false);
     auto derivativeResultsMin = modelChecker.getBound(env, currRegion, OptimizationDirection::Minimize, nullptr)
                                     ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                     .getValueVector();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "storm-pars/modelchecker/region/RegionCheckEngine.h"
+#include "storm-pars/modelchecker/region/RegionModelChecker.h"
 #include "storm-pars/modelchecker/region/RegionResultHypothesis.h"
 #include "storm/solver/OptimizationDirection.h"
 
@@ -98,10 +99,15 @@ namespace storm {
 				 * Retrieves which type of region check should be performed
 				 */
 				storm::modelchecker::RegionCheckEngine getRegionCheckEngine() const;
-				
-				/*!
-				 * Retrieves whether no illustration of the result should be printed.
-				 */
+
+                /*!
+                 * Retrieves which type of monotonicity should be used
+                 */
+                storm::modelchecker::MonotonicityType getMonotonicityType() const;
+
+                /*!
+                 * Retrieves whether no illustration of the result should be printed.
+                 */
                 bool isPrintNoIllustrationSet() const;
                 
                 /*!
@@ -126,6 +132,7 @@ namespace storm {
 				const static std::string checkEngineOptionName;
 				const static std::string printNoIllustrationOptionName;
 				const static std::string printFullResultOptionName;
+                const static std::string monotonicityTypeOptionName;
             };
             
         } // namespace modules

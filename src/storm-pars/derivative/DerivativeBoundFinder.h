@@ -18,7 +18,10 @@ namespace derivative {
 template<typename FunctionType, typename ConstantType>
 class DerivativeBoundFinder {
    public:
-    DerivativeBoundFinder<FunctionType, ConstantType>(storm::models::sparse::Dtmc<FunctionType> const model) : model(model) {}
+    DerivativeBoundFinder<FunctionType, ConstantType>(storm::models::sparse::Dtmc<FunctionType> const model) : model(model) {
+        model.writeDotToStream(std::cout);
+        // minimizeParameterCountInDTMC(model);
+    }
 
     void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask) {
         this->currentFormula = checkTask.getFormula().asSharedPointer();
@@ -30,7 +33,11 @@ class DerivativeBoundFinder {
             this->currentFormulaNoBound = std::make_shared<storm::logic::ProbabilityOperatorFormula>(
                 subformula,
                 storm::logic::OperatorInformation(boost::none, boost::none));
-            this->currentSubformula = subformula->asUnaryPathFormula().getSubformula().asSharedPointer();
+            // if (subformula->isUnaryPathFormula()) {
+            // this->currentSubformula = subformula->asUnaryPathFormula().getSubformula().asSharedPointer();
+            // } else if (subformula->isBinaryPathFormula()) {
+            //     this->currentSubformula = subformula->asBinaryPathFormula().getSubformula().asSharedPointer();
+            // }
             /* auto subformulaConstructor =
              * checkTask.getFormula().asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula().asSharedPointer(); */
             /* this->subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none); */
@@ -40,7 +47,11 @@ class DerivativeBoundFinder {
             // No worries, this works as intended, the API is just weiird.
             this->currentFormulaNoBound =
                 std::make_shared<storm::logic::RewardOperatorFormula>(subformula);
-            this->currentSubformula = subformula->asUnaryPathFormula().getSubformula().asSharedPointer();
+            // if (subformula->isUnaryPathFormula()) {
+            // this->currentSubformula = subformula->asUnaryPathFormula().getSubformula().asSharedPointer();
+            // } else if (subformula->isBinaryPathFormula()) {
+            //     this->currentSubformula = subformula->asBinaryPathFormula().getSubformula().asSharedPointer();
+            // }
             /* auto subformulaConstructor =
              * checkTask.getFormula().asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula().asSharedPointer(); */
             /* this->subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none); */
@@ -63,15 +74,14 @@ class DerivativeBoundFinder {
         }
     }
 
-    std::pair<models::sparse::Dtmc<FunctionType>, std::pair<std::shared_ptr<storm::logic::Formula>,
-                                                            std::shared_ptr<storm::logic::Formula>>>
+    std::pair<std::pair<models::sparse::Dtmc<FunctionType>, models::sparse::Dtmc<FunctionType>>,
+              std::pair<std::shared_ptr<storm::logic::Formula>, std::shared_ptr<storm::logic::Formula>>>
     computeMonotonicityTasks(
         Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region, std::vector<ConstantType> minValues,
         std::vector<ConstantType> maxValues,
         std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
         // std::shared_ptr<storm::analysis::MonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> globalMonotonicityResult,
-        typename utility::parametric::VariableType<FunctionType>::type const& parameter
-        );
+        typename utility::parametric::VariableType<FunctionType>::type const& parameter);
 
     void
     updateMonotonicityResult(
@@ -81,6 +91,8 @@ class DerivativeBoundFinder {
         typename utility::parametric::VariableType<FunctionType>::type const& parameter,
         uint_fast64_t initialState
     );
+
+    models::sparse::Dtmc<FunctionType> minimizeParameterCountInDTMC(models::sparse::Dtmc<FunctionType>);
 
     // void derivativePLASketch(Environment const& env, typename utility::parametric::VariableType<FunctionType>::type parameter, ConstantType terminateArea);
 
@@ -95,7 +107,7 @@ class DerivativeBoundFinder {
     std::unique_ptr<modelchecker::CheckTask<storm::logic::Formula, ConstantType>> currentCheckTaskNoBoundConstantType;
     std::shared_ptr<storm::logic::Formula const> currentFormula;
     std::shared_ptr<storm::logic::Formula const> currentFormulaNoBound;
-    std::shared_ptr<storm::logic::Formula const> currentSubformula;
+    // std::shared_ptr<storm::logic::Formula const> currentSubformula;
     // std::unique_ptr<storm::logic::Formula const> terminalExpression;
 
     /* std::shared_ptr<storm::logic::EventuallyFormula const> subformula; */
