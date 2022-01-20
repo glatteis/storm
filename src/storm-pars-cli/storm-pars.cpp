@@ -1,6 +1,9 @@
+#include <cstdint>
+#include "adapters/RationalFunctionAdapter.h"
 #include "storm-cli-utilities/cli.h"
 #include "storm-cli-utilities/model-handling.h"
 
+#include "storm-pars/analysis/MonotonicityResult.h"
 #include "storm-pars/api/storm-pars.h"
 #include "storm-pars/api/region.h"
 #include "storm-pars/analysis/MonotonicityHelper.h"
@@ -9,6 +12,7 @@
 #include "storm-pars/derivative/GradientDescentInstantiationSearcher.h"
 #include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
 #include "storm-pars/modelchecker/instantiation/SparseCtmcInstantiationModelChecker.h"
+#include "storm-pars/modelchecker/region/RegionModelChecker.h"
 #include "storm-pars/modelchecker/region/SparseParameterLiftingModelChecker.h"
 #include "storm-pars/modelchecker/region/SparseDtmcParameterLiftingModelChecker.h"
 
@@ -49,6 +53,7 @@
 #include "storm/settings/modules/IOSettings.h"
 #include "storm/settings/modules/BisimulationSettings.h"
 #include "storm/settings/modules/TransformationSettings.h"
+#include "utility/logging.h"
 
 
 namespace storm {
@@ -295,8 +300,8 @@ namespace storm {
             auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
 
             PreprocessResult result(model, false);
-            if (monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() ||
-                derSettings.getDerivativeAtInstantiation() || derSettings.isLiftingTestSet()) {
+            if ((monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() ||
+                derSettings.getDerivativeAtInstantiation() || derSettings.isLiftingTestSet()) && monSettings.getMonotonicityType() != modelchecker::MonotonicityType::LIFTING) {
                 STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
                 result.model = storm::pars::simplifyModel<ValueType>(result.model, input);
                 result.changed = true;
@@ -660,13 +665,15 @@ namespace storm {
                 
                 modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> referenceCheckTask(*formula);
                 std::shared_ptr<storm::logic::Formula> formulaWithoutBound;
-                if (!referenceCheckTask.isRewardModelSet()) {
+                if (formulas[0]->isProbabilityOperatorFormula()) {
                     formulaWithoutBound = std::make_shared<storm::logic::ProbabilityOperatorFormula>(
                         formulas[0]->asProbabilityOperatorFormula().getSubformula().asSharedPointer(), storm::logic::OperatorInformation(boost::none, boost::none));
-                } else {
+                } else if (formulas[0]->isRewardOperatorFormula()) {
                     // No worries, this works as intended, the API is just weird.
                     formulaWithoutBound = std::make_shared<storm::logic::RewardOperatorFormula>(
                             formulas[0]->asRewardOperatorFormula().getSubformula().asSharedPointer());
+                } else {
+                    STORM_LOG_ERROR("Only probability or reward operator formulas supported.");
                 }
                 const storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask
                     = storm::modelchecker::CheckTask<storm::logic::Formula, ValueType>(*formulaWithoutBound);
@@ -727,11 +734,47 @@ namespace storm {
             storm::utility::Stopwatch monotonicityWatch(true);
             STORM_LOG_THROW(regions.size() <= 1, storm::exceptions::InvalidArgumentException, "Monotonicity analysis only allowed on single region");
             if (!monSettings.isMonSolutionSet()) {
-                auto monotonicityHelper = storm::analysis::MonotonicityHelper<ValueType, double>(model, formulas, regions, monSettings.getNumberOfSamples(), storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision(), monSettings.isDotOutputSet());
-                if (monSettings.isExportMonotonicitySet()) {
-                    monotonicityHelper.checkMonotonicityInBuild(outfile, monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
-                } else {
-                    monotonicityHelper.checkMonotonicityInBuild(std::cout, monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
+                auto monotonicityType = monSettings.getMonotonicityType();
+                if (monotonicityType == modelchecker::MonotonicityType::GRAPH) {
+                    auto monotonicityHelper = storm::analysis::MonotonicityHelper<ValueType, double>(model, formulas, regions, monSettings.getNumberOfSamples(), storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision(), monSettings.isDotOutputSet());
+                    if (monSettings.isExportMonotonicitySet()) {
+                        monotonicityHelper.checkMonotonicityInBuild(outfile, monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
+                    } else {
+                        monotonicityHelper.checkMonotonicityInBuild(std::cout, monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
+                    }
+                } else if (monotonicityType == modelchecker::MonotonicityType::LIFTING) {
+                    auto dtmc = model->template as<storm::models::sparse::Dtmc<ValueType>>();
+                    dtmc->reduceToStateBasedRewards();
+                    storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formulas[0]);
+                    derivative::MonotonicityPLAChecker<storm::RationalFunction, double> monPLAChecker(*dtmc);
+                    monPLAChecker.specifyFormula(Environment(), checkTask);
+                    // TODO Make Initial State flexible
+                    auto newRegions = regions;
+                    if (regions.size() == 0) {
+                        typename storage::ParameterRegion<ValueType>::Valuation lowerBoundaries;
+                        typename storage::ParameterRegion<ValueType>::Valuation upperBoundaries;
+
+                        for (auto var : storm::models::sparse::getAllParameters(*model)) {
+                            auto lb = utility::convertNumber<typename storage::ParameterRegion<ValueType>::CoefficientType>(0 + storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision());
+                            auto ub = utility::convertNumber<typename storage::ParameterRegion<ValueType>::CoefficientType>(1 - storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision());
+                            lowerBoundaries.insert(std::make_pair(var, lb));
+                            upperBoundaries.insert(std::make_pair(var, ub));
+                        }
+                        newRegions.push_back(storage::ParameterRegion<ValueType>(std::move(lowerBoundaries), std::move(upperBoundaries)));
+                    }
+                    uint_fast64_t initialState = monPLAChecker.getInitialState();
+                    for (auto const& region : newRegions) {
+                        std::cout << "Region: " << region << std::endl;
+                        for (auto const& parameter : storm::models::sparse::getAllParameters(*model)) {
+                            auto bound = monPLAChecker.getDerivativeBound(Environment(), region, parameter);
+                            auto valueVectorMax = bound.first->template asExplicitQuantitativeCheckResult<double>().getValueVector();
+                            auto boundMax = valueVectorMax[initialState];
+                            auto valueVectorMin = bound.second->template asExplicitQuantitativeCheckResult<double>().getValueVector();
+                            auto boundMin = valueVectorMin[initialState];
+                            std::cout << boundMax << " <= " << "d" << parameter << " <= " << boundMin << std::endl;
+                        }
+                    }
+                    
                 }
             } else {
                 // Checking monotonicity based on solution function
@@ -990,7 +1033,6 @@ namespace storm {
             auto buildSettings = storm::settings::getModule<storm::settings::modules::BuildSettings>();
             auto parSettings = storm::settings::getModule<storm::settings::modules::ParametricSettings>();
             auto monSettings = storm::settings::getModule<storm::settings::modules::MonotonicitySettings>();
-            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
 
             STORM_LOG_THROW(mpi.engine == storm::utility::Engine::Sparse || mpi.engine == storm::utility::Engine::Hybrid || mpi.engine == storm::utility::Engine::Dd, storm::exceptions::InvalidSettingsException, "The selected engine is not supported for parametric models.");
 
@@ -1073,7 +1115,7 @@ namespace storm {
 // TODO: is onlyGlobalSet was used here
                 verifyParametricModel<DdType, ValueType>(model, input, regions, samples,
                                                          storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false,
-                                                                                         monSettings.isUsePLABoundsSet(), regionSettings.getMonotonicityType()),
+                                                                                         monSettings.isUsePLABoundsSet(), monSettings.getMonotonicityType()),
                                                          monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
             }
         }

@@ -1,6 +1,7 @@
 #ifndef STORM_MONOTONICITYPLACHECKER_H
 #define STORM_MONOTONICITYPLACHECKER_H
 
+#include <cstdint>
 #include <memory>
 #include "DerivativeBoundFinder.h"
 #include "environment/Environment.h"
@@ -27,6 +28,7 @@ class MonotonicityPLAChecker {
               std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>
     getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& region,
                        typename utility::parametric::VariableType<FunctionType>::type parameter);
+    uint_fast64_t getInitialState();
 
     const models::sparse::Dtmc<FunctionType> model;
     derivative::DerivativeBoundFinder<FunctionType, ConstantType> boundFinder;

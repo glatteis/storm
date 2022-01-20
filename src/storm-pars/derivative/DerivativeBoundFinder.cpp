@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <string>
 #include "adapters/RationalFunctionAdapter.h"
 #include "api/bisimulation.h"
 #include "logic/FormulasForwardDeclarations.h"
@@ -181,6 +182,12 @@ using CoefficientType = typename utility::parametric::CoefficientType<FunctionTy
 //     return std::make_pair(std::move(resultMax), std::move(resultMin));
 // }
 
+
+template<typename FunctionType, typename ConstantType>
+storm::models::sparse::Dtmc<FunctionType> const DerivativeBoundFinder<FunctionType, ConstantType>::getInternalModel() {
+    return model;
+}
+
 template<typename FunctionType, typename ConstantType>
 std::pair<std::pair<models::sparse::Dtmc<FunctionType>, models::sparse::Dtmc<FunctionType>>,
           std::pair<std::shared_ptr<storm::logic::Formula>, std::shared_ptr<storm::logic::Formula>>>
@@ -198,7 +205,7 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     
     std::vector<FunctionType> stateRewardsMax(transitionMatrix.getRowCount());
     std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
-
+    
     for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
         if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
             if (currentCheckTaskNoBound->isRewardModelSet()) {
@@ -266,20 +273,38 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     storm::modelchecker::SparsePropositionalModelChecker<models::sparse::Dtmc<FunctionType>> propositionalChecker(modelCopy);
     storage::BitVector phiStates;
     storage::BitVector psiStates;
-    if (this->currentFormula->asProbabilityOperatorFormula().getSubformula().isUntilFormula()) {
-        phiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula())
-                        ->asExplicitQualitativeCheckResult()
-                        .getTruthValuesVector();
-        psiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getRightSubformula())
-                        ->asExplicitQualitativeCheckResult()
-                        .getTruthValuesVector();
-    } else {
-        STORM_LOG_ASSERT(this->currentFormula->asProbabilityOperatorFormula().getSubformula().isEventuallyFormula(),
-                         "Expecting formula to be until or eventually formula");
-        phiStates = storage::BitVector(modelCopy.getNumberOfStates(), true);
-        psiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula())
-                        ->asExplicitQualitativeCheckResult()
-                        .getTruthValuesVector();
+    if (this->currentFormula->isProbabilityOperatorFormula()) {
+        if (this->currentFormula->asProbabilityOperatorFormula().getSubformula().isUntilFormula()) {
+            phiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula())
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+            psiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getRightSubformula())
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+        } else {
+            STORM_LOG_ASSERT(this->currentFormula->asProbabilityOperatorFormula().getSubformula().isEventuallyFormula(),
+                             "Expecting formula to be until or eventually formula");
+            phiStates = storage::BitVector(modelCopy.getNumberOfStates(), true);
+            psiStates = propositionalChecker.check(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula())
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+        }
+    } else if (this->currentFormula->isRewardOperatorFormula()) {
+        if (this->currentFormula->asRewardOperatorFormula().getSubformula().isUntilFormula()) {
+            phiStates = propositionalChecker.check(this->currentFormula->asRewardOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula())
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+            psiStates = propositionalChecker.check(this->currentFormula->asRewardOperatorFormula().getSubformula().asUntilFormula().getRightSubformula())
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+        } else {
+            STORM_LOG_ASSERT(this->currentFormula->asRewardOperatorFormula().getSubformula().isEventuallyFormula(),
+                             "Expecting formula to be until or eventually formula");
+            phiStates = storage::BitVector(modelCopy.getNumberOfStates(), true);
+            psiStates = propositionalChecker.check(this->currentFormula->asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula())
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+        }
     }
     std::pair<storage::BitVector, storage::BitVector> statesWithProbability01 =
         utility::graph::performProb01(modelCopy.getBackwardTransitions(), phiStates, psiStates);
@@ -326,8 +351,8 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     STORM_LOG_ASSERT(simplifier.simplify(*formulaMin), "Could not simplify derivative model.");
     auto modelMin = simplifier.getSimplifiedModel();
 
-    modelMax = storm::api::performDeterministicSparseBisimulationMinimization(modelMax, {formulaMax}, storage::BisimulationType::Weak);
-    modelMin = storm::api::performDeterministicSparseBisimulationMinimization(modelMin, {formulaMin}, storage::BisimulationType::Weak);
+    modelMax = storm::api::performDeterministicSparseBisimulationMinimization(modelMax, {formulaMax}, storage::BisimulationType::Strong);
+    modelMin = storm::api::performDeterministicSparseBisimulationMinimization(modelMin, {formulaMin}, storage::BisimulationType::Strong);
 
     // std::cout << parameter << std::endl;
     // std::cout << "Model copy:" << std::endl;
@@ -368,11 +393,23 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult
 
 template<typename FunctionType, typename ConstantType>
 models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantType>::minimizeParameterCountInDTMC(models::sparse::Dtmc<FunctionType> dtmc) {
-    storage::SparseMatrix<FunctionType> transitionMatrix2 = model.getTransitionMatrix();
     storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
     
     // Repeat this algorithm until we can't mimimize anything anymore
     bool somethingChanged = true;
+    auto allParameters = storm::models::sparse::getAllParameters(dtmc);
+    
+    models::sparse::StateLabeling newLabels(dtmc.getStateLabeling());
+
+    // Check the reward model - do not touch states with rewards
+    boost::optional<std::vector<FunctionType>> stateRewardVector;
+    if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
+        if (currentCheckTaskNoBound->isRewardModelSet()) {
+            stateRewardVector =  model.getRewardModel(currentCheckTaskNoBound->getRewardModel()).getStateRewardVector();
+        } else {
+            stateRewardVector =  model.getRewardModel("").getStateRewardVector();
+        }
+    }
     
     while (somethingChanged) {
         somethingChanged = false;
@@ -389,15 +426,19 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
         // States visited from first with 1-p to second
         std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, uint_fast64_t>> decreasingSuccessors;
         
+        // We only join states that have all the same labels.
+        std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::set<std::string>>> joiningLabels;
+        
         // As I can't create my own, save the ps from the matrix to re-use them
         std::map<storm::RationalFunctionVariable, FunctionType> pFunctions;
+
         uint_fast64_t numberOfSearchingTransitions = 0;
-        auto allParameters = storm::models::sparse::getAllParameters(dtmc);
         for (auto const& parameter : allParameters) {
             alreadyVisitedStates[parameter] = std::map<uint_fast64_t, std::vector<uint_fast64_t>>();
             talliedUpProbabilities[parameter] = std::map<uint_fast64_t, std::vector<RationalNumber>>();
             increasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
             decreasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
+            joiningLabels[parameter] = std::map<uint_fast64_t, std::set<std::string>>();
         }
         // Search for all occurences of parameters and fill up the maps
         for (uint_fast64_t row = 0; row < transitionMatrix.getRowCount(); row++) {
@@ -420,7 +461,8 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                     talliedUpProbabilities[parameter][row].push_back(utility::one<RationalNumber>());
                     increasingSuccessors[parameter][row] = entry.getColumn();
                     doneSearching[parameter][row] = false;
-                } else if (entry.getValue() == utility::one<FunctionType>() - parameterAsFunction) {
+                    joiningLabels[parameter][row] = newLabels.getLabelsOfState(row);
+                } else if (utility::one<FunctionType>() - entry.getValue() == parameterAsFunction) {
                     decreasingSuccessors[parameter][row] = entry.getColumn();
                 } else {
                     STORM_LOG_ASSERT(false, "Flip minimization only supports simple pMCs.");
@@ -429,6 +471,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
         }
         // Step by step, do a backwards search
         uint_fast64_t transitionsDoneSearching = 0;
+        auto backwardsTransitions = transitionMatrix.transpose(true);
         // Final results of the search: Sets of sets of states that we can transform together
         // The maps are <state where the paths join> -> <set of states that leads there, with this probability>
         std::map<storm::RationalFunctionVariable, std::map<uint_fast64_t, std::map<uint_fast64_t, RationalNumber>>> joinedFirstStates;
@@ -446,7 +489,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                     if (doneSearching[parameter][firstState]) {
                         continue;
                     }
-                    auto row = dtmc.getBackwardTransitions().getRow(visitedStates.back());
+                    auto row = backwardsTransitions.getRow(visitedStates.back());
                     
                     storage::MatrixEntry<uint_fast64_t, FunctionType> entry;
                     bool entryFound = false;
@@ -454,11 +497,20 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                         if (loopEntry.getValue().isZero()) {
                             continue;
                         }
-                        // We only support one backlink per state for now
+                        // We only support one backlink per state for now, so if we already found an entry, abort
                         if (entryFound) {
                             entryFound = false;
                             break;
                         }
+                        // We only support all involved states to have the same label
+                        if (joiningLabels[parameter][visitedStates.back()] != dtmc.getLabelsOfState(entry.getColumn())) {
+                            break;
+                        }
+                        // We only support all involved states to have no rewards
+                        if (stateRewardVector && !(*stateRewardVector)[visitedStates.back()].isZero()) {
+                            break;
+                        }
+
                         entry = loopEntry;
                         entryFound = true;
                     }
@@ -468,7 +520,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                         continue;
                     }
 
-                    // Only search until another parametric transition occurs, then we can't continue anymore
+                    // Only search until another parametric transition occurs, then we can't continue anympore
                     if (!entry.getValue().isConstant()) {
                         transitionsDoneSearching++;
                         doneSearching[parameter][firstState] = true;
@@ -484,7 +536,12 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                     // Check if any search of the same parameter has already gotten here
                     for (auto const& pair3 : alreadyVisitedStates[parameter]) {
                         auto otherFirstState = pair3.first;
+                        // Don't join a state with itself
                         if (otherFirstState == firstState) {
+                            continue;
+                        }
+                        // If the labels don't match, this is not a match
+                        if (joiningLabels[parameter][otherFirstState] != joiningLabels[parameter][firstState]) {
                             continue;
                         }
                         auto otherVisitedStates = pair3.second;
@@ -537,6 +594,7 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
             if (joinedFirstStates[parameter].size() == 0) {
                 continue;
             }
+            std::cout << "joining " << joinedFirstStates[parameter].size() << " cases for " << parameter << std::endl;
             uint_fast64_t runningCounter = wipMatrix.getRowCount();
 
             std::map<uint_fast64_t, std::vector<uint_fast64_t>> newStates;
@@ -550,6 +608,18 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                 newStates[pair.first] = {firstNewState, secondNewState, thirdNewState};
                 runningCounter += 3;
             }
+            
+            // Extend labeling to more states (Found no better way to do it)
+            models::sparse::StateLabeling nextNewLabels(runningCounter);
+            for (auto const& label : newLabels.getLabels()) {
+                nextNewLabels.addLabel(label);
+            }
+            for (uint_fast64_t state = 0; state < wipMatrix.getRowCount(); state++) {
+                for (auto const& label : newLabels.getLabelsOfState(state)) {
+                    nextNewLabels.addLabelToState(label, state);
+                }
+            }
+            newLabels = nextNewLabels;
 
             storage::SparseMatrixBuilder<FunctionType> builder;
             for (uint_fast64_t row = 0; row < wipMatrix.getRowCount(); row++) {
@@ -625,29 +695,39 @@ models::sparse::Dtmc<FunctionType> DerivativeBoundFinder<FunctionType, ConstantT
                     insertInOrder2.pop();
                     builder.addNextValue(newStates[row][2], pair.first, pair.second);
                 }
+                
+                for (auto const& label : joiningLabels[parameter][row]) {
+                    if (!newLabels.getLabels().count(label)) {
+                        newLabels.addLabel(label);
+                    }
+                    for (uint_fast64_t i = 0; i < 3; i++) {
+                        newLabels.addLabelToState(label, newStates[row][i]);
+                    }
+                }
             }
             wipMatrix = builder.build();
         }
-        std::cout << wipMatrix << std::endl;
         transitionMatrix = wipMatrix;
-        std::cout << transitionMatrix << std::endl;
-
-        models::sparse::StateLabeling stateLabeling(transitionMatrix.getRowCount());
-        for (uint_fast64_t state = 0; state < dtmc.getNumberOfStates(); state++) {
-            for (auto const& label : dtmc.getStateLabeling().getLabelsOfState(state)) {
-                stateLabeling.addLabel(label);
-                stateLabeling.addLabelToState(label, state);
-            }
-        }
-        models::sparse::Dtmc<FunctionType> newDTMC(transitionMatrix, stateLabeling);
-        for (auto const& rewardModel : dtmc.getRewardModels()) {
-            newDTMC.addRewardModel(rewardModel.first, rewardModel.second);
-        }
-        dtmc = newDTMC;
     }
-
-    return dtmc;
-
+    // models::sparse::StateLabeling stateLabeling(transitionMatrix.getRowCount());
+    // for (auto const& label : dtmc.getStateLabeling().getLabels()) {
+    //     stateLabeling.addLabel(label);
+    // }
+    // for (uint_fast64_t state = 0; state < dtmc.getNumberOfStates(); state++) {
+    //     for (auto const& label : dtmc.getStateLabeling().getLabelsOfState(state)) {
+    //         stateLabeling.addLabelToState(label, state);
+    //     }
+    // }
+    // for (uint_fast64_t state = dtmc.getNumberOfStates(); state < transitionMatrix.getRowCount(); state++) {
+    //     for (auto const& label : newLabels.getLabelsOfState(state)) {
+    //         stateLabeling.addLabelToState(label, state);
+    //     }
+    // }
+    models::sparse::Dtmc<FunctionType> newDTMC(transitionMatrix, newLabels);
+    for (auto const& rewardModel : dtmc.getRewardModels()) {
+        newDTMC.addRewardModel(rewardModel.first, rewardModel.second);
+    }
+    return newDTMC;
 
     // Do a DFS and search for occuring parameters, stop there
     // storage::BitVector currentStates = model.getInitialStates();

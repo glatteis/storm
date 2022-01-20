@@ -1,5 +1,6 @@
 #include "storm-pars/settings/modules/MonotonicitySettings.h"
 
+#include "storm-pars/modelchecker/region/RegionModelChecker.h"
 #include "storm/settings/Option.h"
 #include "storm/settings/OptionBuilder.h"
 #include "storm/settings/ArgumentBuilder.h"
@@ -26,6 +27,7 @@ namespace storm {
             const std::string MonotonicitySettings::monotonicityThreshold ="depth";
 
             const std::string MonotonicitySettings::monotoneParameters ="parameters";
+            const std::string MonotonicitySettings::monotonicityTypeOptionName = "monotonicity-type";
 
             MonotonicitySettings::MonotonicitySettings() : ModuleSettings(moduleName) {
                 this->addOption(storm::settings::OptionBuilder(moduleName, monotonicityAnalysis, false, "Sets whether monotonicity analysis is done").setIsAdvanced().setShortName(monotonicityAnalysisShortName).build());
@@ -40,6 +42,16 @@ namespace storm {
                                         .addArgument(storm::settings::ArgumentBuilder::createUnsignedIntegerArgument(monotonicityThreshold, "The depth threshold from which on monotonicity is used for Parameter Lifting").setDefaultValueUnsignedInteger(0).build()).build());
 
                 this->addOption(storm::settings::OptionBuilder(moduleName, monotoneParameters, true, "Sets monotone parameters from file.").setIsAdvanced().addArgument(storm::settings::ArgumentBuilder::createStringArgument("monotoneParametersFilename", "The file where the monotone parameters are set").build()).build());
+                std::vector<std::string> monotonicitySettings = {"graph", "lifting"};
+                this->addOption(
+                    storm::settings::OptionBuilder(moduleName, monotonicityTypeOptionName, true,
+                                                   "Sets which type of monotonicity is used (if --use-monotonicity is set). Options are graph (graph-based "
+                                                   "standard monotonicity checking) or lifting (derivative-based parameter lifting monotonicity checking).")
+                        .addArgument(storm::settings::ArgumentBuilder::createStringArgument("name", "The name of the type of monotonicity.")
+                                         .addValidatorString(ArgumentValidatorFactory::createMultipleChoiceValidator(monotonicitySettings))
+                                         .setDefaultValueString("graph")
+                                         .build())
+                        .build());
             }
 
             bool MonotonicitySettings::isMonotonicityAnalysisSet() const {
@@ -89,6 +101,21 @@ namespace storm {
             bool MonotonicitySettings::isMonSolutionSet() const {
                 return this->getOption(monSolution).getHasOptionBeenSet();
             }
+
+
+            storm::modelchecker::MonotonicityType MonotonicitySettings::getMonotonicityType() const {
+                std::string monotonicityString = this->getOption(monotonicityTypeOptionName).getArgumentByName("name").getValueAsString();
+                storm::modelchecker::MonotonicityType result;
+                if (monotonicityString == "graph") {
+                    result = storm::modelchecker::MonotonicityType::GRAPH;
+                } else if (monotonicityString == "lifting") {
+                    result = storm::modelchecker::MonotonicityType::LIFTING;
+                } else {
+                    STORM_LOG_THROW(false, storm::exceptions::IllegalArgumentValueException, "Unknown region check engine '" << monotonicityString << "'.");
+                }
+                return result;
+            }
+
 
         } // namespace modules
     } // namespace settings

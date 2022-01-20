@@ -21,8 +21,9 @@ template<typename FunctionType, typename ConstantType>
 class DerivativeBoundFinder {
    public:
     DerivativeBoundFinder<FunctionType, ConstantType>(storm::models::sparse::Dtmc<FunctionType> const model) : model(model) {
-        model.writeDotToStream(std::cout);
     }
+
+    storm::models::sparse::Dtmc<FunctionType> const getInternalModel();
 
     void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask) {
         this->currentFormula = checkTask.getFormula().asSharedPointer();
@@ -74,15 +75,15 @@ class DerivativeBoundFinder {
             }
         }
 
-        model = minimizeParameterCountInDTMC(model);
-        std::cout << "NEW DTMC BEFORE MINIMIZING" << std::endl;
-        model.writeDotToStream(std::cout);
-        storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
-        STORM_LOG_ASSERT(simplifier.simplify(*this->currentFormulaNoBound), "Could not simplify model.");
-        auto modelPtr = simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
-        model = *storm::api::performDeterministicSparseBisimulationMinimization(modelPtr, {this->currentFormulaNoBound}, storage::BisimulationType::Weak);
-        std::cout << "NEW DTMC" << std::endl;
-        model.writeDotToStream(std::cout);
+        // model = minimizeParameterCountInDTMC(model);
+        // std::cout << "NEW DTMC BEFORE MINIMIZING" << std::endl;
+        // model.writeDotToStream(std::cout);
+        // storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
+        // STORM_LOG_ASSERT(simplifier.simplify(*this->currentFormulaNoBound), "Could not simplify model.");
+        // auto modelPtr = simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
+        // model = *storm::api::performDeterministicSparseBisimulationMinimization(modelPtr, {this->currentFormulaNoBound}, storage::BisimulationType::Weak);
+        // std::cout << "NEW DTMC" << std::endl;
+        // model.writeDotToStream(std::cout);
     }
 
     std::pair<std::pair<models::sparse::Dtmc<FunctionType>, models::sparse::Dtmc<FunctionType>>,

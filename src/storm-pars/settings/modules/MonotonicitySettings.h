@@ -1,6 +1,7 @@
 #ifndef STORM_SETTINGS_MODULES_MONOTONICITYSETTINGS_H_
 #define STORM_SETTINGS_MODULES_MONOTONICITYSETTINGS_H_
 
+#include "storm-pars/modelchecker/region/RegionModelChecker.h"
 #include "storm/settings/modules/ModuleSettings.h"
 
 namespace storm {
@@ -67,6 +68,10 @@ namespace storm {
                 uint64_t getMonotonicityThreshold() const;
 
 
+                /*!
+                 * Retrieves which type of monotonicity should be used
+                 */
+                storm::modelchecker::MonotonicityType getMonotonicityType() const;
 
                 const static std::string moduleName;
 
@@ -82,6 +87,7 @@ namespace storm {
                 const static std::string monotoneParameters;
                 const static std::string monSolution;
                 const static std::string monSolutionShortName;
+                const static std::string monotonicityTypeOptionName;
 
             };
 

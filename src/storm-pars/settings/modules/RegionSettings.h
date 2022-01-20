@@ -101,11 +101,6 @@ namespace storm {
 				storm::modelchecker::RegionCheckEngine getRegionCheckEngine() const;
 
                 /*!
-                 * Retrieves which type of monotonicity should be used
-                 */
-                storm::modelchecker::MonotonicityType getMonotonicityType() const;
-
-                /*!
                  * Retrieves whether no illustration of the result should be printed.
                  */
                 bool isPrintNoIllustrationSet() const;
@@ -132,7 +127,6 @@ namespace storm {
 				const static std::string checkEngineOptionName;
 				const static std::string printNoIllustrationOptionName;
 				const static std::string printFullResultOptionName;
-                const static std::string monotonicityTypeOptionName;
             };
             
         } // namespace modules

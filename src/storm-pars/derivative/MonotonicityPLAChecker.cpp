@@ -1,4 +1,5 @@
 #include "MonotonicityPLAChecker.h"
+#include <cstdint>
 #include <memory>
 #include "models/ModelBase.h"
 #include "models/sparse/Dtmc.h"
@@ -49,6 +50,18 @@ MonotonicityPLAChecker<FunctionType, ConstantType>::getDerivativeBound(Environme
 }
 
 template<typename FunctionType, typename ConstantType>
+uint_fast64_t MonotonicityPLAChecker<FunctionType, ConstantType>::getInitialState() {
+    auto internalModel = boundFinder.getInternalModel();
+    uint_fast64_t initialState;
+    const storm::storage::BitVector initialVector = internalModel.getInitialStates();
+    for (uint_fast64_t x : initialVector) {
+        initialState = x;
+        break;
+    }
+    return initialState;
+}
+
+template<typename FunctionType, typename ConstantType>
 void MonotonicityPLAChecker<FunctionType, ConstantType>::performMonotonicityPLA(Environment const& env, VariableType<FunctionType> wrt,
                                                                                 ConstantType terminateArea) {
     STORM_LOG_INFO("Demo derivative PLA w.r.t. " << wrt);
@@ -58,12 +71,6 @@ void MonotonicityPLAChecker<FunctionType, ConstantType>::performMonotonicityPLA(
     std::vector<storage::ParameterRegion<FunctionType>> positivelyMonotoneRegions;
     std::vector<storage::ParameterRegion<FunctionType>> negativelyMonotoneRegions;
     std::vector<storage::ParameterRegion<FunctionType>> unknownRegions;
-    uint_fast64_t initialState;
-    const storm::storage::BitVector initialVector = model.getInitialStates();
-    for (uint_fast64_t x : initialVector) {
-        initialState = x;
-        break;
-    }
     const ConstantType precision = utility::convertNumber<ConstantType>(storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision());
     std::queue<storage::ParameterRegion<FunctionType>> regionQueue;
     // Make big region
@@ -74,6 +81,8 @@ void MonotonicityPLAChecker<FunctionType, ConstantType>::performMonotonicityPLA(
         bigUpper[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(0.99);
     }
     storage::ParameterRegion<FunctionType> bigRegion(bigLower, bigUpper);
+    
+    auto initialState = getInitialState();
 
     regionQueue.push(bigRegion);
     uint_fast64_t regionsComputed = 0;
