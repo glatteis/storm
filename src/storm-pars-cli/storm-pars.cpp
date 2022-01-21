@@ -771,7 +771,7 @@ namespace storm {
                             auto boundMax = valueVectorMax[initialState];
                             auto valueVectorMin = bound.second->template asExplicitQuantitativeCheckResult<double>().getValueVector();
                             auto boundMin = valueVectorMin[initialState];
-                            std::cout << boundMax << " <= " << "d" << parameter << " <= " << boundMin << std::endl;
+                            std::cout << boundMin << " <= " << "d" << parameter << " <= " << boundMax << std::endl;
                         }
                     }
                     

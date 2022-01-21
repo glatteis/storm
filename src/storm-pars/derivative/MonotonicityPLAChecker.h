@@ -18,6 +18,7 @@ class MonotonicityPLAChecker {
 
     void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask) {
         boundFinder.specifyFormula(env, checkTask);
+        model = boundFinder.getInternalModel();
         auto currentFormula = checkTask.getFormula().asSharedPointer();
         currentCheckTask = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(checkTask.substituteFormula(*currentFormula));
     }
@@ -30,7 +31,7 @@ class MonotonicityPLAChecker {
                        typename utility::parametric::VariableType<FunctionType>::type parameter);
     uint_fast64_t getInitialState();
 
-    const models::sparse::Dtmc<FunctionType> model;
+    models::sparse::Dtmc<FunctionType> model;
     derivative::DerivativeBoundFinder<FunctionType, ConstantType> boundFinder;
     modelchecker::SparseDtmcParameterLiftingModelChecker<models::sparse::Dtmc<FunctionType>, ConstantType> modelChecker;
     std::unique_ptr<modelchecker::CheckTask<storm::logic::Formula, FunctionType>> currentCheckTask;

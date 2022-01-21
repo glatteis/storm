@@ -7,6 +7,7 @@
 #include <string>
 #include "adapters/RationalFunctionAdapter.h"
 #include "api/bisimulation.h"
+#include "logic/FormulaContext.h"
 #include "logic/FormulasForwardDeclarations.h"
 #include "logic/ProbabilityOperatorFormula.h"
 #include "logic/UntilFormula.h"
@@ -29,6 +30,7 @@
 #include "storm-parsers/parser/FormulaParser.h"
 #include "utility/constants.h"
 #include "utility/graph.h"
+#include "utility/logging.h"
 #include "utility/macros.h"
 #include "modelchecker/results/ExplicitQuantitativeCheckResult.h"
 
@@ -311,10 +313,10 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     storage::BitVector target = statesWithProbability01.second;
     storage::BitVector bottomStates = statesWithProbability01.first;
 
-    storm::storage::BitVector newTarget(target.size());
+    storm::storage::BitVector newPsiStates(target.size());
 
     if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
-        newTarget = target;
+        newPsiStates = psiStates;
     } else {
         storm::storage::BitVector probZero = storm::utility::graph::performProbGreater0(modelCopy.getBackwardTransitions(),
                                                                                         storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
@@ -322,12 +324,16 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
         storm::storage::BitVector probOne =
             storm::utility::graph::performProb1(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
 
-        newTarget |= probZero;
-        newTarget |= probOne;
+        // We are turning a probability operator formula into a reward operator formula.
+        // The actual probability of reaching the target should now be one to collect all rewards.
+        newPsiStates |= probZero;
+        newPsiStates |= probOne;
     }
 
+    modelCopy.getStateLabeling().addLabel("derivative-safe");
+    modelCopy.getStateLabeling().setStates("derivative-safe", phiStates);
     modelCopy.getStateLabeling().addLabel("derivative-target");
-    modelCopy.getStateLabeling().setStates("derivative-target", newTarget);
+    modelCopy.getStateLabeling().setStates("derivative-target", newPsiStates);
 
     /* modelCopy.writeDotToStream(std::cout); */
     /* for (uint_fast64_t i = 0; i < modelCopy.getNumberOfStates(); i++) { */
@@ -337,33 +343,51 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
      * std::string("derivative-max"), this->formulaOperatorInformation,
      * logic::RewardMeasureType::Expectation)->asRewardOperatorFormula().asSharedPointer(); */
 
-    auto subformulaConstructor = std::make_shared<logic::AtomicLabelFormula>("derivative-target");
-    auto subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none);
+
+    std::shared_ptr<storm::logic::Formula> subformula;
+    if ((this->currentFormula->isRewardOperatorFormula() && this->currentFormula->asRewardOperatorFormula().getSubformula().isEventuallyFormula()) ||
+        (this->currentFormula->isProbabilityOperatorFormula() && this->currentFormula->asProbabilityOperatorFormula().getSubformula().isEventuallyFormula())) {
+        auto subformulaConstructor = std::make_shared<logic::AtomicLabelFormula>("derivative-target");
+        subformula = std::make_shared<logic::EventuallyFormula>(subformulaConstructor, logic::FormulaContext::Reward, boost::none);
+    } else {
+        auto subformulaConstructor1 = std::make_shared<logic::AtomicLabelFormula>("derivative-safe");
+        auto subformulaConstructor2 = std::make_shared<logic::AtomicLabelFormula>("derivative-target");
+        subformula = std::make_shared<logic::UntilFormula>(subformulaConstructor1, subformulaConstructor2);
+    }
 
     auto formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-max"), this->formulaOperatorInformation);
     auto formulaMin = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-min"), this->formulaOperatorInformation);
+    
+    // std::cout << *formulaMax << std::endl;
+    // std::cout << *formulaMin << std::endl;
 
     storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(modelCopy);
 
-    STORM_LOG_ASSERT(simplifier.simplify(*formulaMax), "Could not simplify derivative model.");
-    auto modelMax = simplifier.getSimplifiedModel();
+    // STORM_LOG_ASSERT(simplifier.simplify(*formulaMax), "Could not simplify derivative model.");
+    // auto modelMax = simplifier.getSimplifiedModel();
 
-    STORM_LOG_ASSERT(simplifier.simplify(*formulaMin), "Could not simplify derivative model.");
-    auto modelMin = simplifier.getSimplifiedModel();
-
-    modelMax = storm::api::performDeterministicSparseBisimulationMinimization(modelMax, {formulaMax}, storage::BisimulationType::Strong);
-    modelMin = storm::api::performDeterministicSparseBisimulationMinimization(modelMin, {formulaMin}, storage::BisimulationType::Strong);
+    // STORM_LOG_ASSERT(simplifier.simplify(*formulaMin), "Could not simplify derivative model.");
+    // auto modelMin = simplifier.getSimplifiedModel();
+    
+    // modelMax->reduceToStateBasedRewards();
+    // modelMin->reduceToStateBasedRewards();
+    
+    auto modelMax = model;
+    auto modelMin = model;
 
     // std::cout << parameter << std::endl;
     // std::cout << "Model copy:" << std::endl;
     // modelCopy.writeDotToStream(std::cout, 30, true, nullptr, &modelCopy.getRewardModel("derivative-min").getStateRewardVector(),
     //                            &modelCopy.getRewardModel("derivative-max").getStateRewardVector());
     // std::cout << "Model max:" << std::endl;
-    // modelMax->writeDotToStream(std::cout, 30, true, nullptr, &modelMax->getUniqueRewardModel().getStateRewardVector());
+    // modelMax.writeDotToStream(std::cout, 30, true, nullptr, &modelMax.getUniqueRewardModel().getStateRewardVector());
     // std::cout << "Model min:" << std::endl;
-    // modelMin->writeDotToStream(std::cout, 30, true, nullptr, &modelMin->getUniqueRewardModel().getStateRewardVector());
+    // modelMin.writeDotToStream(std::cout, 30, true, nullptr, &modelMin.getUniqueRewardModel().getStateRewardVector());
 
-    return std::make_pair(std::make_pair(*modelMax, *modelMin), std::make_pair(formulaMin, formulaMax));
+    // modelMax = storm::api::performDeterministicSparseBisimulationMinimization(modelMax, {formulaMax}, storage::BisimulationType::Strong);
+    // modelMin = storm::api::performDeterministicSparseBisimulationMinimization(modelMin, {formulaMin}, storage::BisimulationType::Strong);
+    
+    return std::make_pair(std::make_pair(modelCopy, modelCopy), std::make_pair(formulaMin, formulaMax));
 }
 
 template<typename FunctionType, typename ConstantType>

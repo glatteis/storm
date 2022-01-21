@@ -75,13 +75,13 @@ class DerivativeBoundFinder {
             }
         }
 
-        // model = minimizeParameterCountInDTMC(model);
+        model = minimizeParameterCountInDTMC(model);
         // std::cout << "NEW DTMC BEFORE MINIMIZING" << std::endl;
         // model.writeDotToStream(std::cout);
-        // storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
-        // STORM_LOG_ASSERT(simplifier.simplify(*this->currentFormulaNoBound), "Could not simplify model.");
-        // auto modelPtr = simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
-        // model = *storm::api::performDeterministicSparseBisimulationMinimization(modelPtr, {this->currentFormulaNoBound}, storage::BisimulationType::Weak);
+        storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
+        STORM_LOG_ASSERT(simplifier.simplify(*this->currentFormulaNoBound), "Could not simplify model.");
+        auto modelPtr = simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
+        model = *storm::api::performDeterministicSparseBisimulationMinimization(modelPtr, {this->currentFormulaNoBound}, storage::BisimulationType::Weak);
         // std::cout << "NEW DTMC" << std::endl;
         // model.writeDotToStream(std::cout);
     }

@@ -19,7 +19,9 @@ std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantT
           std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantType>>>
 MonotonicityPLAChecker<FunctionType, ConstantType>::getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& currRegion,
                                                                        VariableType<FunctionType> parameter) {
-    modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(model), *currentCheckTask);
+    auto initialState = getInitialState();
+    model.writeDotToStream(std::cout);
+    modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(model), *currentCheckTask, false, false);
     std::vector<ConstantType> minBound = modelChecker.getBound(env, currRegion, storm::solver::OptimizationDirection::Minimize, nullptr)
                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                              .getValueVector();
@@ -31,9 +33,13 @@ MonotonicityPLAChecker<FunctionType, ConstantType>::getDerivativeBound(Environme
     auto modelMin = derivativeCheckStuff.first.second;
     auto formulaMin = derivativeCheckStuff.second.first;
     auto formulaMax = derivativeCheckStuff.second.second;
+    
+    std::cout << "min bound: " << minBound[initialState] << ", max bound: " << maxBound[initialState] << std::endl;
+    std::cout << *formulaMin << std::endl;
+    std::cout << *formulaMax << std::endl;
 
-    auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMin);
     auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMax);
+    auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(*formulaMin);
     modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(modelMax), *checkTaskMax, false, false);
     auto derivativeResultsMax = modelChecker.getBound(env, currRegion, OptimizationDirection::Maximize, nullptr)
                                     ->template asExplicitQuantitativeCheckResult<ConstantType>()
@@ -42,6 +48,7 @@ MonotonicityPLAChecker<FunctionType, ConstantType>::getDerivativeBound(Environme
     auto derivativeResultsMin = modelChecker.getBound(env, currRegion, OptimizationDirection::Minimize, nullptr)
                                     ->template asExplicitQuantitativeCheckResult<ConstantType>()
                                     .getValueVector();
+    std::cout << "der. min bound: " << derivativeResultsMin[initialState] << ", der. max bound: " << derivativeResultsMax[initialState] << std::endl;
     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
     auto resultMax = std::make_unique<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>>(derivativeResultsMax);
     auto resultMin = std::make_unique<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>>(derivativeResultsMin);
