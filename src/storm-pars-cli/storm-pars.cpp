@@ -258,7 +258,7 @@ namespace storm {
         }
 
         template <typename ValueType>
-        std::shared_ptr<storm::models::ModelBase> simplifyModel(std::shared_ptr<storm::models::ModelBase> const& model, SymbolicInput const& input) {
+        std::shared_ptr<storm::models::ModelBase> simplifyModel(std::shared_ptr<storm::models::ModelBase> const& model, SymbolicInput const& input, bool keepRewardsAsConstantAsPossible = false) {
             storm::utility::Stopwatch simplifyingWatch(true);
             std::shared_ptr<storm::models::ModelBase> result;
             if (model->isOfType(storm::models::ModelType::Dtmc)) {
@@ -267,7 +267,7 @@ namespace storm {
                 std::vector<std::shared_ptr<storm::logic::Formula const>> formulas = storm::api::extractFormulasFromProperties(input.properties);
                 STORM_LOG_THROW(formulas.begin()!=formulas.end(), storm::exceptions::NotSupportedException, "Only one formula at the time supported");
 
-                if (!simplifier.simplify(*(formulas[0]))) {
+                if (!simplifier.simplify(*(formulas[0]), keepRewardsAsConstantAsPossible)) {
                     STORM_LOG_THROW(false, storm::exceptions::UnexpectedException, "Simplifying the model was not successfull.");
                 }
                 result = simplifier.getSimplifiedModel();
@@ -277,7 +277,7 @@ namespace storm {
                 std::vector<std::shared_ptr<storm::logic::Formula const>> formulas = storm::api::extractFormulasFromProperties(input.properties);
                 STORM_LOG_THROW(formulas.begin()!=formulas.end(), storm::exceptions::NotSupportedException, "Only one formula at the time supported");
 
-                if (!simplifier.simplify(*(formulas[0]))) {
+                if (!simplifier.simplify(*(formulas[0]), keepRewardsAsConstantAsPossible)) {
                     STORM_LOG_THROW(false, storm::exceptions::UnexpectedException, "Simplifying the model was not successfull.");
                 }
                 result = simplifier.getSimplifiedModel();
@@ -303,7 +303,7 @@ namespace storm {
             if ((monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() ||
                 derSettings.getDerivativeAtInstantiation() || derSettings.isLiftingTestSet()) && monSettings.getMonotonicityType() != modelchecker::MonotonicityType::LIFTING) {
                 STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
-                result.model = storm::pars::simplifyModel<ValueType>(result.model, input);
+                result.model = storm::pars::simplifyModel<ValueType>(result.model, input,  (monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet()) && input.properties.begin()->getRawFormula()->isRewardOperatorFormula());
                 result.changed = true;
             }
 

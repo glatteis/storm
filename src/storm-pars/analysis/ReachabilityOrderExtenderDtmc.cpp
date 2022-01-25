@@ -4,12 +4,12 @@ namespace storm {
     namespace analysis {
 
         template<typename ValueType, typename ConstantType>
-    ReachabilityOrderExtenderDtmc<ValueType, ConstantType>::ReachabilityOrderExtenderDtmc(std::shared_ptr<models::sparse::Model<ValueType>> model, std::shared_ptr<logic::Formula const> formula) : ReachabilityOrderExtender<ValueType, ConstantType>(model, formula) {
+    ReachabilityOrderExtenderDtmc<ValueType, ConstantType>::ReachabilityOrderExtenderDtmc(std::shared_ptr<models::sparse::Model<ValueType>> model, std::shared_ptr<logic::Formula const> formula, bool useAssumptions) : ReachabilityOrderExtender<ValueType, ConstantType>(model, formula, useAssumptions) {
             // intentionally left empty
         }
 
         template<typename ValueType, typename ConstantType>
-        ReachabilityOrderExtenderDtmc<ValueType, ConstantType>::ReachabilityOrderExtenderDtmc(storm::storage::BitVector* topStates,  storm::storage::BitVector* bottomStates, storm::storage::SparseMatrix<ValueType> matrix) : ReachabilityOrderExtender<ValueType, ConstantType>(topStates, bottomStates, matrix) {
+        ReachabilityOrderExtenderDtmc<ValueType, ConstantType>::ReachabilityOrderExtenderDtmc(storm::storage::BitVector* topStates,  storm::storage::BitVector* bottomStates, storm::storage::SparseMatrix<ValueType> matrix, bool useAssumptions) : ReachabilityOrderExtender<ValueType, ConstantType>(topStates, bottomStates, matrix, useAssumptions) {
             // intentionally left empty
         }
 
@@ -124,7 +124,7 @@ namespace storm {
                                 if (!order->contains(state2)) {
                                     order->add(state2);
                                 }
-                                order->addRelation(state1, state2, false);
+                                order->addRelation(state1, state2);
                             } else if (min[state2] > max[state1]) {
                                 if (!order->contains(state1)) {
                                     order->add(state1);
@@ -132,7 +132,7 @@ namespace storm {
                                 if (!order->contains(state2)) {
                                     order->add(state2);
                                 }
-                                order->addRelation(state2, state1, false);
+                                order->addRelation(state2, state1);
                             } else if (min[state1] == max[state2] && max[state1] == min[state2]) {
                                 if (!order->contains(state1) && !order->contains(state2)) {
                                     order->add(state1);

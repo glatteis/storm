@@ -20,6 +20,9 @@ namespace storm {
         template <typename ValueType, typename ConstantType>
         MonotonicityHelper<ValueType, ConstantType>::MonotonicityHelper(std::shared_ptr<models::sparse::Model<ValueType>> model, std::vector<std::shared_ptr<logic::Formula const>> formulas, std::vector<storage::ParameterRegion<ValueType>> regions, uint_fast64_t numberOfSamples, double const& precision, bool dotOutput) : assumptionMaker(model->getTransitionMatrix()) {
             STORM_LOG_ASSERT (model != nullptr, "Expecting model to be provided for monotonicity helper");
+            if (model->hasUniqueRewardModel()) {
+                this->assumptionMaker.setRewardModel(std::make_shared<storm::models::sparse::StandardRewardModel<ValueType>>(model->getUniqueRewardModel()));
+            }
             this->model = model;
             this->formulas = formulas;
             this->precision = utility::convertNumber<ConstantType>(precision);
@@ -59,16 +62,17 @@ namespace storm {
 
             if (model->isOfType(models::ModelType::Dtmc)) {
                 if (formulas[0]->isProbabilityOperatorFormula()) {
-                    this->extender = new analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0]);
+                    this->extender = new analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0], false);
                 } else if (formulas[0]->isRewardOperatorFormula()) {
-                    this->extender = new analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0]);
+                    this->extender = new analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0], false);
 
                 } else {
                     STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Monotonicity checking not implemented for property" << formulas[0]);
                 }
             } else if (model->isOfType(models::ModelType::Mdp)) {
+                // TODO: @Jip this doesn't work for min props
                 // TODO where to get prMax? Based on what was given via --prop?
-                this->extender = new analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>(model, formulas[0], true);
+                this->extender = new analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>(model, formulas[0], true, false);
             } else {
                 STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Monotonicity checking not implemented for model type: ");
             }
@@ -234,6 +238,7 @@ namespace storm {
                     monResults.insert({order, {monRes, assumptions}});
                     STORM_LOG_INFO("    None of the assumptions were valid, we stop exploring the current order");
                 } else {
+
                     STORM_LOG_INFO("    Created " << newAssumptions.size() << " assumptions, we continue extending the current order");
                 }
 
@@ -251,6 +256,7 @@ namespace storm {
                                 // only add assumption to the set of assumptions if it is unknown whether it holds or not
                                 assumptionsCopy.push_back(std::move(assumption.first));
                             }
+                            // TODO hier gaat ergens iets fout met de assumption
                             auto criticalTuple = extendOrder(orderCopy, region, monResCopy, assumption.first);
                             extendOrderWithAssumptions(std::get<0>(criticalTuple), std::get<1>(criticalTuple), std::get<2>(criticalTuple), assumptionsCopy, monResCopy);
                         } else {

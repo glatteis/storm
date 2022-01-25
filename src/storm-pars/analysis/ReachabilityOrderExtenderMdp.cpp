@@ -4,12 +4,12 @@ namespace storm {
     namespace analysis {
 
         template<typename ValueType, typename ConstantType>
-    ReachabilityOrderExtenderMdp<ValueType, ConstantType>::ReachabilityOrderExtenderMdp(std::shared_ptr<models::sparse::Model<ValueType>> model, std::shared_ptr<logic::Formula const> formula, bool prMax) : ReachabilityOrderExtender<ValueType, ConstantType>(model, formula) {
+    ReachabilityOrderExtenderMdp<ValueType, ConstantType>::ReachabilityOrderExtenderMdp(std::shared_ptr<models::sparse::Model<ValueType>> model, std::shared_ptr<logic::Formula const> formula, bool prMax, bool useAssumptions) : ReachabilityOrderExtender<ValueType, ConstantType>(model, formula, useAssumptions) {
             this->prMax = prMax;
         }
 
         template<typename ValueType, typename ConstantType>
-        ReachabilityOrderExtenderMdp<ValueType, ConstantType>::ReachabilityOrderExtenderMdp(storm::storage::BitVector* topStates,  storm::storage::BitVector* bottomStates, storm::storage::SparseMatrix<ValueType> matrix, bool prMax) : ReachabilityOrderExtender<ValueType, ConstantType>(topStates, bottomStates, matrix) {
+        ReachabilityOrderExtenderMdp<ValueType, ConstantType>::ReachabilityOrderExtenderMdp(storm::storage::BitVector* topStates,  storm::storage::BitVector* bottomStates, storm::storage::SparseMatrix<ValueType> matrix, bool prMax, bool useAssumptions) : ReachabilityOrderExtender<ValueType, ConstantType>(topStates, bottomStates, matrix, useAssumptions) {
             this->prMax = prMax;
         }
 
@@ -41,7 +41,23 @@ namespace storm {
                 STORM_LOG_ASSERT (currentStateMode.first < this->numberOfStates, "Unexpected state number");
                 auto& currentState = currentStateMode.first;
                 std::vector<uint_fast64_t> successors;
-                if (this->stateMap[currentState].size() == 1){
+                std::pair<uint_fast64_t, uint_fast64_t> result =  {this->numberOfStates, this->numberOfStates};
+                bool skip = false;
+                if(!order->isActionSetAtState(currentState)) {
+                    if (this->stateMap[currentState].size() == 1) {
+                        order->addToMdpScheduler(currentState, 0);
+                    } else {
+                        result = extendByBackwardReasoning(order, region, currentState);
+                        skip = true;
+                    }
+                }
+                if (order->isActionSetAtState(currentState)) {
+                    successors = this->stateMap[currentState][order->getActionAtState(currentState)];
+                } else {
+                    STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Insufficient scheduler to continue extending order.");
+                }
+
+                /*if (this->stateMap[currentState].size() == 1){
                     successors = this->stateMap[currentState][0];
                     if (!order->isActionSetAtState(currentState)){
                         order->addToMdpScheduler(currentState, 0);
@@ -49,14 +65,14 @@ namespace storm {
                 } else if (order->isActionSetAtState(currentState)) {
                     successors = this->stateMap[currentState][order->getActionAtState(currentState)];
                 } else {
+                    order->dotOutputToFile(std::cout);
                     STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Insufficient scheduler to continue extending order.");
-                }
-                std::pair<uint_fast64_t, uint_fast64_t> result =  {this->numberOfStates, this->numberOfStates};
+                }*/
 
-                if (successors.size() == 1) {
+                if (!skip && successors.size() == 1) {
                     STORM_LOG_ASSERT (order->contains(successors[0]), "Expecting order to contain successor of state " << currentState);
                     this->handleOneSuccessor(order, currentState, successors[0]);
-                } else if (!successors.empty()) {
+                } else if (!skip && !successors.empty()) {
                     if (order->isOnlyInitialOrder()) {
                         order->add(currentState);
                         if (!order->isTrivial(currentState)) {
@@ -423,7 +439,7 @@ namespace storm {
                             if (!order->contains(state2)) {
                                 order->add(state2);
                             }
-                            order->addRelation(state1, state2, false);
+                            order->addRelation(state1, state2);
                         } else if (min[state2] > max[state1]) {
                             if (!order->contains(state1)) {
                                 order->add(state1);
@@ -431,7 +447,7 @@ namespace storm {
                             if (!order->contains(state2)) {
                                 order->add(state2);
                             }
-                            order->addRelation(state2, state1, false);
+                            order->addRelation(state2, state1);
                         } else if (min[state1] == max[state2] && max[state1] == min[state2]) {
                             if (!order->contains(state1) && !order->contains(state2)) {
                                 order->add(state1);
