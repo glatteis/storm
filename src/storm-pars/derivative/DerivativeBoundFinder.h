@@ -75,15 +75,6 @@ class DerivativeBoundFinder {
             }
         }
 
-        model = minimizeParameterCountInDTMC(model);
-        // std::cout << "NEW DTMC BEFORE MINIMIZING" << std::endl;
-        // model.writeDotToStream(std::cout);
-        storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
-        STORM_LOG_ASSERT(simplifier.simplify(*this->currentFormulaNoBound), "Could not simplify model.");
-        auto modelPtr = simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
-        model = *storm::api::performDeterministicSparseBisimulationMinimization(modelPtr, {this->currentFormulaNoBound}, storage::BisimulationType::Weak);
-        // std::cout << "NEW DTMC" << std::endl;
-        // model.writeDotToStream(std::cout);
     }
 
     std::pair<std::pair<models::sparse::Dtmc<FunctionType>, models::sparse::Dtmc<FunctionType>>,
@@ -104,7 +95,6 @@ class DerivativeBoundFinder {
         uint_fast64_t initialState
     );
 
-    models::sparse::Dtmc<FunctionType> minimizeParameterCountInDTMC(models::sparse::Dtmc<FunctionType>);
 
     // void derivativePLASketch(Environment const& env, typename utility::parametric::VariableType<FunctionType>::type parameter, ConstantType terminateArea);
 

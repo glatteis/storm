@@ -109,6 +109,8 @@ namespace storm {
                  * Retrieves whether the full result should be printed
                  */
                 bool isPrintFullResultSet() const;
+				
+				bool isApplyEqualParameterReductionSet() const;
                 
                 bool check() const override;
                 
@@ -127,6 +129,7 @@ namespace storm {
 				const static std::string checkEngineOptionName;
 				const static std::string printNoIllustrationOptionName;
 				const static std::string printFullResultOptionName;
+				const static std::string applyEqualParameterReductionName;
             };
             
         } // namespace modules

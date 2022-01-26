@@ -1,5 +1,6 @@
 #include <cstdint>
 #include "adapters/RationalFunctionAdapter.h"
+#include "models/sparse/Dtmc.h"
 #include "storm-cli-utilities/cli.h"
 #include "storm-cli-utilities/model-handling.h"
 
@@ -11,6 +12,7 @@
 #include "storm-pars/derivative/MonotonicityPLAChecker.h"
 #include "storm-pars/derivative/GradientDescentInstantiationSearcher.h"
 #include "storm-pars/derivative/SparseDerivativeInstantiationModelChecker.h"
+#include "storm-pars/derivative/EqualParameterReducer.h"
 #include "storm-pars/modelchecker/instantiation/SparseCtmcInstantiationModelChecker.h"
 #include "storm-pars/modelchecker/region/RegionModelChecker.h"
 #include "storm-pars/modelchecker/region/SparseParameterLiftingModelChecker.h"
@@ -298,8 +300,18 @@ namespace storm {
             auto transformationSettings = storm::settings::getModule<storm::settings::modules::TransformationSettings>();
             auto monSettings = storm::settings::getModule<storm::settings::modules::MonotonicitySettings>();
             auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
+            auto regSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
 
             PreprocessResult result(model, false);
+
+            if (regSettings.isApplyEqualParameterReductionSet()) {
+                derivative::EqualParameterReducer reducer;
+                auto formulas = storm::api::extractFormulasFromProperties(input.properties);
+                modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> checkTask(*formulas[0]);
+                result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(reducer.minimizeEqualParameters(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask));
+                result.changed = true;
+            }
+
             if ((monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() ||
                 derSettings.getDerivativeAtInstantiation() || derSettings.isLiftingTestSet()) && monSettings.getMonotonicityType() != modelchecker::MonotonicityType::LIFTING) {
                 STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
@@ -316,7 +328,7 @@ namespace storm {
                 result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
                 result.changed = true;
             }
-
+            
             if (transformationSettings.isChainEliminationSet() &&
                 model->isOfType(storm::models::ModelType::MarkovAutomaton)) {
                 auto eliminationResult = storm::api::eliminateNonMarkovianChains(
