@@ -20,6 +20,7 @@ namespace derivative {
 
 models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParameters(models::sparse::Dtmc<RationalFunction> dtmc, modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask) {
     storage::SparseMatrix<RationalFunction> transitionMatrix = dtmc.getTransitionMatrix();
+    dtmc.writeDotToStream(std::cout);
     
     STORM_LOG_ASSERT(dtmc.getTransitionMatrix().isProbabilistic(), "Matrix not probabilistic!");
     // Repeat this algorithm until we can't mimimize anything anymore
@@ -395,9 +396,9 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         }
 
         // Remove the states that are not needed anymore
+        // First we mark which states to delete, then we complement the BitVector
+        storage::BitVector statesToKeep(wipMatrix.getRowCount());
         for (auto const& parameter : allParameters) {
-            storage::BitVector statesToKeep(wipMatrix.getRowCount());
-            
             for (auto const& pair : joinedFirstStates[parameter]) {
                 auto joiningState = pair.first;
                 for (auto const& pair2 : pair.second) {
@@ -416,19 +417,20 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
 
                 }
             }
+        }
 
-            statesToKeep.complement();
-            wipMatrix = wipMatrix.getSubmatrix(false, statesToKeep, statesToKeep, true);
-            newLabels = newLabels.getSubLabeling(statesToKeep);
-            if (stateRewardVector) {
-                std::vector<RationalFunction> newStateRewards;
-                for (uint_fast64_t i = 0; i < stateRewardVector->size(); i++) {
-                    if (statesToKeep[i]) {
-                        newStateRewards.push_back((*stateRewardVector)[i]);
-                    }
+        // Don't forget :)
+        statesToKeep.complement();
+        wipMatrix = wipMatrix.getSubmatrix(false, statesToKeep, statesToKeep, true);
+        newLabels = newLabels.getSubLabeling(statesToKeep);
+        if (stateRewardVector) {
+            std::vector<RationalFunction> newStateRewards;
+            for (uint_fast64_t i = 0; i < stateRewardVector->size(); i++) {
+                if (statesToKeep[i]) {
+                    newStateRewards.push_back((*stateRewardVector)[i]);
                 }
-                stateRewardVector = newStateRewards;
             }
+            stateRewardVector = newStateRewards;
         }
         transitionMatrix = wipMatrix;
     }
@@ -439,7 +441,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         newDTMC.addRewardModel(*stateRewardName, newRewardModel);
     }
     
-    newDTMC.writeDotToStream(std::cout);
+    // newDTMC.writeDotToStream(std::cout);
     
     STORM_LOG_ASSERT(newDTMC.getTransitionMatrix().isProbabilistic(), "Internal error: resulting matrix not probabilistic!");
 
