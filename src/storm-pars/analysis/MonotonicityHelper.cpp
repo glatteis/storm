@@ -62,9 +62,9 @@ namespace storm {
 
             if (model->isOfType(models::ModelType::Dtmc)) {
                 if (formulas[0]->isProbabilityOperatorFormula()) {
-                    this->extender = new analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0], false);
+                    this->extender = new analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0]);
                 } else if (formulas[0]->isRewardOperatorFormula()) {
-                    this->extender = new analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0], false);
+                    this->extender = new analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>(model, formulas[0]);
 
                 } else {
                     STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Monotonicity checking not implemented for property" << formulas[0]);
@@ -72,7 +72,7 @@ namespace storm {
             } else if (model->isOfType(models::ModelType::Mdp)) {
                 // TODO: @Jip this doesn't work for min props
                 // TODO where to get prMax? Based on what was given via --prop?
-                this->extender = new analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>(model, formulas[0], true, false);
+                this->extender = new analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>(model, formulas[0], true);
             } else {
                 STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Monotonicity checking not implemented for model type: ");
             }
@@ -277,18 +277,18 @@ namespace storm {
         std::tuple<std::shared_ptr<Order>, uint_fast64_t, uint_fast64_t> MonotonicityHelper<ValueType, ConstantType>::toOrder(storage::ParameterRegion<ValueType> region, std::shared_ptr<MonotonicityResult<VariableType>> monRes) {
             ReachabilityOrderExtenderDtmc<ValueType, ConstantType>* castedPointerReachDtmc = dynamic_cast<ReachabilityOrderExtenderDtmc<ValueType, ConstantType>*>(extender);
             if (castedPointerReachDtmc != nullptr) {
-                return castedPointerReachDtmc->toOrder(region, monRes);
+                return castedPointerReachDtmc->toOrder(region, false, monRes);
             }
             ReachabilityOrderExtenderMdp<ValueType, ConstantType>* castedPointerReachMdp = dynamic_cast<ReachabilityOrderExtenderMdp<ValueType, ConstantType>*>(extender);
             if (castedPointerReachMdp != nullptr) {
-                return castedPointerReachMdp->toOrder(region, monRes);
+                return castedPointerReachMdp->toOrder(region, false, monRes);
             }
             RewardOrderExtenderDtmc<ValueType, ConstantType>* castedPointerRewDtmc = dynamic_cast<RewardOrderExtenderDtmc<ValueType, ConstantType>*>(extender);
             if (castedPointerRewDtmc != nullptr) {
-                return castedPointerRewDtmc->toOrder(region, monRes);
+                return castedPointerRewDtmc->toOrder(region, false, monRes);
             }
             STORM_LOG_ASSERT(false, "Unexpected order extender type");
-            return extender->toOrder(region, monRes);
+            return extender->toOrder(region, false, monRes);
         }
 
         template <typename ValueType, typename ConstantType>

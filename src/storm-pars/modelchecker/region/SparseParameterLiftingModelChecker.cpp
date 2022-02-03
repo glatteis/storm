@@ -263,6 +263,8 @@ namespace storm {
             storm::utility::Stopwatch boundsWatch(false);
             auto numberOfPLACallsBounds = 0;
             boost::optional<ConstantType> initBound;
+            std::shared_ptr<analysis::Order> optimisticOrder = nullptr;
+            std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> optimisticMonRes = nullptr;
             if (useGraphMonotonicity) {
                 if (this->isUseBoundsSet()) {
                     numberOfPLACallsBounds++;
@@ -276,10 +278,13 @@ namespace storm {
                     }
                     orderExtender->setMinMaxValues(minBound, maxBound);
                 }
-                auto order = this->extendOrder(nullptr, region);
+                auto order = this->getInitialOrder(region, false);
+                optimisticOrder = this->getInitialOrder(region, true);
                 auto monRes = std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>>(new storm::analysis::LocalMonotonicityResult<VariableType>(order->getNumberOfStates()));
+                optimisticMonRes = std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>>(new storm::analysis::LocalMonotonicityResult<VariableType>(optimisticOrder->getNumberOfStates()));
                 storm::utility::Stopwatch monotonicityWatch(true);
                 this->extendLocalMonotonicityResult(region, order, monRes);
+                this->extendLocalMonotonicityResult(region, optimisticOrder, optimisticMonRes);
                 monotonicityWatch.stop();
                 STORM_LOG_INFO(std::endl << "Total time for monotonicity checking: " << monotonicityWatch << "." << std::endl << std::endl);
 
@@ -327,7 +332,11 @@ namespace storm {
             boost::optional<ConstantType> value;
             Valuation valuation;
             if (!initialValue) {
-                auto init = getGoodInitialPoint(env, region, dir, regionQueue.top().localMonRes);
+                auto init = getGoodInitialPoint(env, region, dir, optimisticMonRes);
+                STORM_LOG_INFO("Number of optimistic monotone parameters:" << optimisticMonRes->getGlobalMonotonicityResult()->getNumberOfMonotoneParameters());
+                STORM_LOG_INFO("Number of definitely monotone parameters:" << regionQueue.top().localMonRes->getGlobalMonotonicityResult()->getNumberOfMonotoneParameters());
+                STORM_LOG_INFO("Number of sufficient states optimistic:" << optimisticOrder->getNumberOfSufficientStates());
+                STORM_LOG_INFO("Number of sufficient states:" << regionQueue.top().order->getNumberOfSufficientStates());
                 value = storm::utility::convertNumber<ConstantType>(init.first);
                 valuation = std::move(init.second);
             } else {
@@ -642,7 +651,6 @@ namespace storm {
                     }
                     // Calculate difference with result for previous valuation
                     ConstantType diffCenter = previousCenter - valueCenter;
-                    assert (previousCenter == -1 || (diffCenter >= -1 && diffCenter <= 1));
                     if (previousCenter != -1) {
                         assert (previousCenter != -1 && previousCenter != -1);
                         monDecr &= diffCenter > 0 && diffCenter > 0 && diffCenter > 0; // then previous value is larger than the current value from the initial states
@@ -665,7 +673,6 @@ namespace storm {
                 }
             }
             return std::make_pair(storm::utility::convertNumber<typename SparseModelType::ValueType>(value), std::move(valuation));
-
         }
 
         template<typename SparseModelType, typename ConstantType>
@@ -681,12 +688,10 @@ namespace storm {
                 localMonRes->getGlobalMonotonicityResult()->splitBasedOnMonotonicity(region.getVariables(), monIncr, monDecr, notMonFirst);
 
                 auto numMon = monIncr.size() + monDecr.size();
-                STORM_LOG_INFO("Number of monotone parameters: " << numMon << std::endl;);
-
                 if (numMon < region.getVariables().size()) {
                     checkForPossibleMonotonicity(env, region, monIncr, monDecr, notMon, notMonFirst, dir);
                     STORM_LOG_INFO("Number of possible monotone parameters: " << (monIncr.size() + monDecr.size() - numMon) << std::endl;);
-                    STORM_LOG_INFO("Number of definitely not monotone parameters: " << notMon.size() << std::endl;);
+                    STORM_LOG_INFO("Number of definitely not monotone parameters on entire region: " << notMon.size() << std::endl;);
                 }
 
                 valuation = region.getPoint(dir, monIncr, monDecr);
