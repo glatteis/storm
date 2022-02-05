@@ -332,7 +332,7 @@ namespace storm {
                 }
                 result.changed = true;
             }
-            
+
             if (transformationSettings.isChainEliminationSet() &&
                 model->isOfType(storm::models::ModelType::MarkovAutomaton)) {
                 auto eliminationResult = storm::api::eliminateNonMarkovianChains(
