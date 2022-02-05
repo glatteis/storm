@@ -4,6 +4,7 @@
 #include "storm-pars/analysis/Order.h"
 #include "storm-pars/analysis/RewardOrderExtenderDtmc.h"
 
+#include "storm-pars/modelchecker/region/RegionModelChecker.h"
 #include "storm-pars/transformer/SparseParametricDtmcSimplifier.h"
 
 #include "storm/adapters/RationalFunctionAdapter.h"
@@ -211,7 +212,7 @@ namespace storm {
             STORM_LOG_THROW(!req.hasEnabledCriticalRequirement(), storm::exceptions::UncheckedRequirementException, "Solver requirements " + req.getEnabledRequirementsAsString() + " not checked.");
             solverFactory->setRequirementsChecked(true);
 
-            if (RegionModelChecker<ValueType>::isUseMonotonicitySet()) {
+            if (RegionModelChecker<ValueType>::isUseMonotonicitySet() && RegionModelChecker<ValueType>::getMonotonicityType() == MonotonicityType::GRAPH) {
                 storm::storage::BitVector topStates(this->parametricModel->getNumberOfStates(), false);
                 this->orderExtender = std::make_shared<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>>(
                     topStates, targetStates, this->parametricModel->getTransitionMatrix(), this->parametricModel->getUniqueRewardModel());

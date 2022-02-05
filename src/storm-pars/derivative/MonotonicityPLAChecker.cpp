@@ -20,7 +20,7 @@ std::pair<std::unique_ptr<storm::modelchecker::QuantitativeCheckResult<ConstantT
 MonotonicityPLAChecker<FunctionType, ConstantType>::getDerivativeBound(Environment const& env, storm::storage::ParameterRegion<FunctionType> const& currRegion,
                                                                        VariableType<FunctionType> parameter) {
     auto initialState = getInitialState();
-    model.writeDotToStream(std::cout);
+    // model.writeDotToStream(std::cout);
     modelChecker.specify(env, std::make_shared<models::sparse::Dtmc<FunctionType>>(model), *currentCheckTask, false, false);
     std::vector<ConstantType> minBound = modelChecker.getBound(env, currRegion, storm::solver::OptimizationDirection::Minimize, nullptr)
                                              ->template asExplicitQuantitativeCheckResult<ConstantType>()
