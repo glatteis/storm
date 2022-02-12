@@ -304,6 +304,30 @@ namespace storm {
 
             PreprocessResult result(model, false);
 
+            
+            if (regSettings.isApplyEqualParameterReductionSet()) {
+                result.changed = true;
+                auto oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
+                while (true) {
+                    std::cout << "Doing a round of reducing" << std::endl;
+
+                    if (mpi.applyBisimulation) {
+                        result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
+                    }
+
+                    derivative::EqualParameterReducer reducer;
+                    auto formulas = storm::api::extractFormulasFromProperties(input.properties);
+                    modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> checkTask(*formulas[0]);
+                    result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(reducer.minimizeEqualParameters(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask));
+
+                    if (result.model.get()->getNumberOfStates() == oldModel.getNumberOfStates()) {
+                        std::cout << "Same, breaking" << std::endl;
+                        break;
+                    }
+                    oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
+                }
+            }
+
             if ((monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() ||
                 derSettings.getDerivativeAtInstantiation() || derSettings.isLiftingTestSet()) && monSettings.getMonotonicityType() != modelchecker::MonotonicityType::LIFTING) {
                 STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
@@ -318,18 +342,6 @@ namespace storm {
 
             if (mpi.applyBisimulation) {
                 result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
-                result.changed = true;
-            }
-
-            if (regSettings.isApplyEqualParameterReductionSet()) {
-                derivative::EqualParameterReducer reducer;
-                auto formulas = storm::api::extractFormulasFromProperties(input.properties);
-                modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> checkTask(*formulas[0]);
-                result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(reducer.minimizeEqualParameters(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask));
-                
-                if (mpi.applyBisimulation) {
-                    result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
-                }
                 result.changed = true;
             }
 

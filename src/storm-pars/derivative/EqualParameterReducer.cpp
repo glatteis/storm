@@ -19,8 +19,8 @@ namespace storm {
 namespace derivative {
 
 models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParameters(models::sparse::Dtmc<RationalFunction> dtmc, modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask) {
+    // dtmc.writeDotToStream(std::cout);
     storage::SparseMatrix<RationalFunction> transitionMatrix = dtmc.getTransitionMatrix();
-    dtmc.writeDotToStream(std::cout);
     
     STORM_LOG_ASSERT(dtmc.getTransitionMatrix().isProbabilistic(), "Matrix not probabilistic!");
     // Repeat this algorithm until we can't mimimize anything anymore
@@ -149,7 +149,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                     if (doStep) {
                         // If the last label is different, we stop at the next state (and still join if possible)
                         // If the state reward vector is not zero, we stop at the next state (and still join if possible)
-                        if (joiningLabels[parameter][firstState] != dtmc.getLabelsOfState(entry.getColumn()) ||
+                        if (joiningLabels[parameter][firstState] != newLabels.getLabelsOfState(entry.getColumn()) ||
                             (stateRewardVector && !(*stateRewardVector)[visitedStates.back()].isZero())) {
                             transitionsDoneSearching++;
                             doneSearching[parameter][firstState] = true;
@@ -378,7 +378,8 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                     builder.addNextValue(newStates[row][2], pair.first, pair.second);
                 }
                 
-                for (auto const& label : joiningLabels[parameter][row]) {
+                auto someJoinedState = joinedFirstStates[parameter][row].begin()->first;
+                for (auto const& label : joiningLabels[parameter][someJoinedState]) {
                     if (!newLabels.getLabels().count(label)) {
                         newLabels.addLabel(label);
                     }
@@ -411,7 +412,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                         if (visitedState == joiningState) {
                             break;
                         }
-                        std::cout << "Deleting " << visitedState << std::endl;
+                        // std::cout << "Deleting " << visitedState << std::endl;
                         statesToKeep.set(visitedState, true);
                     }
 
@@ -441,14 +442,13 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         newDTMC.addRewardModel(*stateRewardName, newRewardModel);
     }
     
-    // newDTMC.writeDotToStream(std::cout);
-    
     STORM_LOG_ASSERT(newDTMC.getTransitionMatrix().isProbabilistic(), "Internal error: resulting matrix not probabilistic!");
 
     // Use model simplifier to get rid of unnecessary states
     // storm::transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<RationalFunction>> simplifier(newDTMC);
     // STORM_LOG_ASSERT(simplifier.simplify(checkTask.getFormula()), "Could not simplify model.");
     // newDTMC = *simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<RationalFunction>>();
+    // newDTMC.writeDotToStream(std::cout);
     return newDTMC;
 }
 

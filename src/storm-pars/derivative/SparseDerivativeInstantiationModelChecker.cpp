@@ -104,8 +104,6 @@ template<typename FunctionType, typename ConstantType>
 void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::specifyFormula(
     Environment const& env, modelchecker::CheckTask<storm::logic::Formula, FunctionType> const& checkTask) {
     this->currentFormula = checkTask.getFormula().asSharedPointer();
-    std::cout << *this->currentFormula << std::endl;
-    this->model.writeDotToStream(std::cout);
     this->currentCheckTask = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(
         checkTask.substituteFormula(*currentFormula).template convertValueType<FunctionType>());
     this->parameters = storm::models::sparse::getProbabilityParameters(model);
