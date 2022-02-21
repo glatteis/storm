@@ -394,7 +394,7 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult
     std::vector<ConstantType> derivativeMinValues, std::vector<ConstantType> derivativeMaxValues,
     std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
     VariableType<FunctionType> const& parameter, uint_fast64_t initialState) {
-    std::cout << derivativeMinValues[initialState] << " <= d" << parameter << " <= " << derivativeMaxValues[initialState] << std::endl;
+    // std::cout << derivativeMinValues[initialState] << " <= d" << parameter << " <= " << derivativeMaxValues[initialState] << std::endl;
     boost::optional<typename analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity> finalResult;
     if (derivativeMaxValues[initialState] < 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Decr;

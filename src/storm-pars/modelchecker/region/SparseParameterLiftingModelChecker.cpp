@@ -442,10 +442,10 @@ namespace storm {
                                     auto modelMin = derivativeCheckStuff.first.second;
                                     auto formulaMin = derivativeCheckStuff.second.first;
                                     auto formulaMax = derivativeCheckStuff.second.second;
-                                    
-                                    std::cout << *formulaMin << std::endl;
-                                    std::cout << *formulaMax << std::endl;
-                                    
+
+                                    // std::cout << *formulaMin << std::endl;
+                                    // std::cout << *formulaMax << std::endl;
+
                                     auto checkTaskMin = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMin);
                                     auto checkTaskMax = std::make_shared<storm::modelchecker::CheckTask<storm::logic::Formula, typename SparseModelType::ValueType>>(*formulaMax);
                                     this->specify(env, std::make_shared<models::sparse::Dtmc<typename SparseModelType::ValueType>>(modelMax), *checkTaskMax,
@@ -461,7 +461,7 @@ namespace storm {
                                     boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
                                     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
                                 }
-                                std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
+                                // std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
                                 this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                             }
 

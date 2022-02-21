@@ -314,6 +314,8 @@ namespace storm {
                     if (mpi.applyBisimulation) {
                         result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
                     }
+                    
+                    std::cout << "states after bisim: " << result.model->getNumberOfStates() << std::endl;
 
                     derivative::EqualParameterReducer reducer;
                     auto formulas = storm::api::extractFormulasFromProperties(input.properties);

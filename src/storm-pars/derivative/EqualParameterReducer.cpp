@@ -9,6 +9,7 @@
 #include "modelchecker/CheckTask.h"
 #include "models/sparse/Dtmc.h"
 #include "models/sparse/StandardRewardModel.h"
+#include "models/sparse/StateLabeling.h"
 #include "storage/BitVector.h"
 #include "storage/SparseMatrix.h"
 #include "storm-pars/transformer/SparseParametricDtmcSimplifier.h"
@@ -66,13 +67,13 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         std::map<storm::RationalFunctionVariable, RationalFunction> pFunctions;
 
         uint_fast64_t numberOfSearchingTransitions = 0;
-        for (auto const& parameter : allParameters) {
-            alreadyVisitedStates[parameter] = std::map<uint_fast64_t, std::vector<uint_fast64_t>>();
-            talliedUpProbabilities[parameter] = std::map<uint_fast64_t, std::vector<RationalNumber>>();
-            increasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
-            decreasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
-            joiningLabels[parameter] = std::map<uint_fast64_t, std::set<std::string>>();
-        }
+        // for (auto const& parameter : allParameters) {
+        //     alreadyVisitedStates[parameter] = std::map<uint_fast64_t, std::vector<uint_fast64_t>>();
+        //     talliedUpProbabilities[parameter] = std::map<uint_fast64_t, std::vector<RationalNumber>>();
+        //     increasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
+        //     decreasingSuccessors[parameter] = std::map<uint_fast64_t, uint_fast64_t>();
+        //     joiningLabels[parameter] = std::map<uint_fast64_t, std::set<std::string>>();
+        // }
         // Search for all occurences of parameters and fill up the maps
         for (uint_fast64_t row = 0; row < transitionMatrix.getRowCount(); row++) {
             for (auto const& entry : transitionMatrix.getRow(row)) {
@@ -82,23 +83,25 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                 STORM_LOG_ASSERT(entry.getValue().gatherVariables().size() == 1, "Flip minimization only supports transitions with a single parameter.");
                 auto parameter = *entry.getValue().gatherVariables().begin();
                 auto cache = entry.getValue().nominatorAsPolynomial().pCache();
-                RationalFunction parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
-                if (entry.getValue() == parameterAsFunction) {
-                    pFunctions[parameter] = entry.getValue();
+                STORM_LOG_ASSERT(entry.getValue().denominator().isOne() && entry.getValue().nominator().isUnivariate() &&
+                                     entry.getValue().nominator().getSingleVariable() == parameter &&
+                                     entry.getValue().nominator().factorization().size() == 1,
+                                 "Flip minimization only supports simple pMCs.");
+                pFunctions[parameter] = entry.getValue();
+                
+                if (utility::isOne(entry.getValue().derivative(entry.getValue().nominator().getSingleVariable()))) {
                     numberOfSearchingTransitions++;
                     auto parameter = entry.getValue().nominatorAsPolynomial().getSingleVariable();
                     STORM_LOG_ASSERT(alreadyVisitedStates[parameter].count(row) == 0, "Flip minimization only supports simple pMCs.");
-                    alreadyVisitedStates[parameter][row] = std::vector<uint_fast64_t>();
                     alreadyVisitedStates[parameter][row].push_back(row);
-                    talliedUpProbabilities[parameter][row] = std::vector<RationalNumber>();
                     talliedUpProbabilities[parameter][row].push_back(utility::one<RationalNumber>());
                     increasingSuccessors[parameter][row] = entry.getColumn();
                     doneSearching[parameter][row] = false;
                     joiningLabels[parameter][row] = newLabels.getLabelsOfState(row);
-                } else if (utility::one<RationalFunction>() - entry.getValue() == parameterAsFunction) {
+                } else if (utility::isOne(-entry.getValue().derivative(entry.getValue().nominator().getSingleVariable()))) {
                     decreasingSuccessors[parameter][row] = entry.getColumn();
                 } else {
-                    STORM_LOG_ASSERT(false, "Flip minimization only supports simple pMCs.");
+                    STORM_LOG_ASSERT(false, "Flip minimization only supports transitions with a single parameter.");
                 }
             }
         }
@@ -119,7 +122,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                 for (auto const& pair2 : visitedStateMap) {
                     auto firstState = pair2.first;
                     auto visitedStates = pair2.second;
-                    if (doneSearching[parameter][firstState]) {
+                    if (doneSearching.at(parameter).at(firstState)) {
                         continue;
                     }
                     auto row = backwardsTransitions.getRow(visitedStates.back());
@@ -149,7 +152,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                     if (doStep) {
                         // If the last label is different, we stop at the next state (and still join if possible)
                         // If the state reward vector is not zero, we stop at the next state (and still join if possible)
-                        if (joiningLabels[parameter][firstState] != newLabels.getLabelsOfState(entry.getColumn()) ||
+                        if (joiningLabels.at(parameter).at(firstState) != newLabels.getLabelsOfState(entry.getColumn()) ||
                             (stateRewardVector && !(*stateRewardVector)[visitedStates.back()].isZero())) {
                             transitionsDoneSearching++;
                             doneSearching[parameter][firstState] = true;
@@ -158,7 +161,9 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                         currentState = entry.getColumn();
                         
                         // The next probability is the previous one times the considered tranistion
-                        talliedUpProbabilities[parameter][firstState].push_back(talliedUpProbabilities[parameter][firstState].back() * constantProbability);
+                        RationalNumber numberToPush = talliedUpProbabilities[parameter][firstState].back() * constantProbability;
+                        // std::cout << "pushing " << numberToPush << std::endl;
+                        talliedUpProbabilities[parameter][firstState].push_back(numberToPush);
                         alreadyVisitedStates[parameter][firstState].push_back(currentState);
                     }
 
@@ -175,7 +180,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                             continue;
                         }
                         // If the labels don't match, this is not a match
-                        if (joiningLabels[parameter][otherFirstState] != joiningLabels[parameter][firstState]) {
+                        if (joiningLabels.at(parameter).at(otherFirstState) != joiningLabels.at(parameter).at(firstState)) {
                             continue;
                         }
                         auto otherVisitedStates = pair3.second;
@@ -185,14 +190,14 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                         // doneSearching[parameter][otherFirstState] can only be false if the other path has gotten here,
                         // but has not noticed it is the end of the path yet. The easiest way to mitigate this is let
                         // that path join us when it notices.
-                        if (state == currentState && doneSearching[parameter][otherFirstState]) {
+                        if (state == currentState && doneSearching.at(parameter).at(otherFirstState)) {
                             // Wow!!! Another search of the same parameter has gotten here.
-                            if (!joinedFirstStates[parameter].count(state)) {
+                            if (!joinedFirstStates.at(parameter).count(state)) {
                                 joinedFirstStates[parameter][state] = std::map<uint_fast64_t, RationalNumber>();
                             }
-                            RationalNumber p1 = talliedUpProbabilities[parameter][firstState].back();
+                            RationalNumber p1 = talliedUpProbabilities.at(parameter).at(firstState).back();
                             joinedFirstStates[parameter][state][firstState] = p1;
-                            RationalNumber p2 = talliedUpProbabilities[parameter][otherFirstState].back();
+                            RationalNumber p2 = talliedUpProbabilities.at(parameter).at(otherFirstState).back();
                             joinedFirstStates[parameter][state][otherFirstState] = p2;
                             
                             break;
@@ -204,7 +209,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         
         // Check if we found any parameters that we can join into one transition, and if so, do it
         for (auto const& parameter : allParameters) {
-            if (joinedFirstStates[parameter].size() > 0) {
+            if (joinedFirstStates.at(parameter).size() > 0) {
                 somethingChanged = true;
                 break;
             }
@@ -212,10 +217,10 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         // States that are on parametric paths
         std::map<storm::RationalFunctionVariable, std::set<uint_fast64_t>> statesOnParametricPaths;
         for (auto const& parameter : allParameters) {
-            for (auto const& joinedFirstStatesPair : joinedFirstStates[parameter]) {
+            for (auto const& joinedFirstStatesPair : joinedFirstStates.at(parameter)) {
                 for (auto const& firstStatePair : joinedFirstStatesPair.second) {
                     auto firstState = firstStatePair.first;
-                    for (auto const& visitedState : alreadyVisitedStates[parameter][firstState]) {
+                    for (auto const& visitedState : alreadyVisitedStates.at(parameter).at(firstState)) {
                         statesOnParametricPaths[parameter].emplace(visitedState);
                     }
                 }
@@ -228,14 +233,14 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         storage::SparseMatrix<RationalFunction> wipMatrix(transitionMatrix);
         for (auto const& parameter : allParameters) {
             // We add three new states to the DTMC for this procedure for every state where parameters join
-            if (joinedFirstStates[parameter].size() == 0) {
+            if (joinedFirstStates.at(parameter).size() == 0) {
                 continue;
             }
-            std::cout << "joining " << joinedFirstStates[parameter].size() << " cases for " << parameter << std::endl;
+            std::cout << "joining " << joinedFirstStates.at(parameter).size() << " cases for " << parameter << std::endl;
             uint_fast64_t runningCounter = wipMatrix.getRowCount();
 
             std::map<uint_fast64_t, std::vector<uint_fast64_t>> newStates;
-            for (auto const& pair : joinedFirstStates[parameter]) {
+            for (auto const& pair : joinedFirstStates.at(parameter)) {
                 // The state that will come before the parametric flip
                 auto firstNewState = runningCounter;
                 // The state after p 
@@ -261,12 +266,12 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
             storage::SparseMatrixBuilder<RationalFunction> builder;
             for (uint_fast64_t row = 0; row < wipMatrix.getRowCount(); row++) {
                 // If from row, we are starting with a transition we will flip...
-                if (joinedFirstStates[parameter].count(row)) {
+                if (joinedFirstStates.at(parameter).count(row)) {
                     std::priority_queue<std::pair<uint_fast64_t, RationalFunction>, std::vector<std::pair<uint_fast64_t, RationalFunction>>, std::greater<std::pair<uint_fast64_t, RationalFunction>>> insertInOrder;
                     // For checking correctness
                     RationalFunction rowSum = utility::zero<RationalFunction>();
                     // We will join until these transitions
-                    auto statesBeforeParams = joinedFirstStates[parameter][row];
+                    auto statesBeforeParams = joinedFirstStates.at(parameter).at(row);
                     
                     std::set<uint_fast64_t> alreadyConsidered;
                     // We go, in reverse, through the visited states of every state
@@ -283,12 +288,12 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                     // S1 -> SN1
                     // ...
                     for (auto const& startingState : statesBeforeParams) {
-                        auto visitedStates = alreadyVisitedStates[parameter][startingState.first];
+                        auto visitedStates = alreadyVisitedStates.at(parameter).at(startingState.first);
                         // The probability to reach the starting state. It will be divided as we step back
-                        RationalNumber probability = talliedUpProbabilities[parameter][startingState.first].back();
+                        RationalNumber probability = talliedUpProbabilities.at(parameter).at(startingState.first).back();
                         for (uint_fast64_t i = 1; i < visitedStates.size(); i++) {
                             // Previous (next in reality) visited state is i-1. Divide the probability
-                            auto const& visitedState = visitedStates[i];
+                            auto const& visitedState = visitedStates.at(i);
                             if (alreadyConsidered.count(visitedState)) {
                                 break;
                             }
@@ -303,11 +308,13 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                                 }
                             }
                             STORM_LOG_ASSERT(transitionProbability, "Very bad internal error: could not trace back found path");
+                            // std::cout << probability << std::endl;
+                            // std::cout << *transitionProbability << std::endl;
                             probability = probability / *transitionProbability;
                             // Go through the matrix entries to see what other stuff is branching here
                             for (auto const& entry : wipMatrix.getRow(visitedState)) {
                                 auto state = entry.getColumn();
-                                if (!statesOnParametricPaths[parameter].count(state)) {
+                                if (!statesOnParametricPaths.at(parameter).count(state)) {
                                     // This state is not on a parametric path, thus it needs to be added to the original state
                                     RationalFunction value = utility::convertNumber<RationalFunction>(probability) * entry.getValue();
                                     insertInOrder.emplace(std::make_pair(state, value));
@@ -322,7 +329,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                         summedProbability += entry2.second;
                     }
                     // Add transition to the state that will have the parametric decision
-                    insertInOrder.emplace(std::make_pair(newStates[row][0], utility::convertNumber<RationalFunction>(summedProbability)));
+                    insertInOrder.emplace(std::make_pair(newStates.at(row)[0], utility::convertNumber<RationalFunction>(summedProbability)));
                     rowSum += utility::convertNumber<RationalFunction>(summedProbability);
 
                     STORM_LOG_ASSERT(utility::isOne(rowSum), "Internal error: Row sum of row " << row << " is " << rowSum << ", not one!");
@@ -339,52 +346,52 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
             }
             
             // RationalFunction parameterAsFunction = storm::RationalFunction(storm::Polynomial(storm::RawPolynomial(parameter), cache));
-            RationalFunction parameterAsFunction = pFunctions[parameter];
+            RationalFunction parameterAsFunction = pFunctions.at(parameter);
 
-            for (auto const& pair : joinedFirstStates[parameter]) {
+            for (auto const& pair : joinedFirstStates.at(parameter)) {
                 auto row = pair.first;
                 RationalNumber summedProbability = 0;
-                for (auto const& entry2 : joinedFirstStates[parameter][row]) {
+                for (auto const& entry2 : joinedFirstStates.at(parameter).at(row)) {
                     summedProbability += entry2.second;
                 }
                 // Add parametric transitions 
-                builder.addNextValue(newStates[row][0], newStates[row][1], parameterAsFunction);
-                builder.addNextValue(newStates[row][0], newStates[row][2], utility::one<RationalFunction>() - parameterAsFunction);
+                builder.addNextValue(newStates.at(row)[0], newStates.at(row)[1], parameterAsFunction);
+                builder.addNextValue(newStates.at(row)[0], newStates.at(row)[2], utility::one<RationalFunction>() - parameterAsFunction);
                 
                 // Add transitions from p and 1-p states to actual successors
                 std::priority_queue<std::pair<uint_fast64_t, RationalFunction>, std::vector<std::pair<uint_fast64_t, RationalFunction>>, std::greater<std::pair<uint_fast64_t, RationalFunction>>> insertInOrder1;
                 for (auto const& pair2 : pair.second) {
                     auto id = pair2.first;
                     RationalNumber probability = pair2.second / summedProbability;
-                    auto increasingSuccessor = increasingSuccessors[parameter][id];
+                    auto increasingSuccessor = increasingSuccessors.at(parameter).at(id);
                     insertInOrder1.emplace(std::make_pair(increasingSuccessor, utility::convertNumber<RationalFunction>(probability)));
                 }
                 while (!insertInOrder1.empty()) {
                     auto pair = insertInOrder1.top();
                     insertInOrder1.pop();
-                    builder.addNextValue(newStates[row][1], pair.first, pair.second);
+                    builder.addNextValue(newStates.at(row)[1], pair.first, pair.second);
                 }
                 
                 std::priority_queue<std::pair<uint_fast64_t, RationalFunction>, std::vector<std::pair<uint_fast64_t, RationalFunction>>, std::greater<std::pair<uint_fast64_t, RationalFunction>>> insertInOrder2;
                 for (auto const& pair2 : pair.second) {
                     auto id = pair2.first;
                     RationalNumber probability = pair2.second / summedProbability;
-                    auto decreasingSuccessor = decreasingSuccessors[parameter][id];
+                    auto decreasingSuccessor = decreasingSuccessors.at(parameter).at(id);
                     insertInOrder2.emplace(std::make_pair(decreasingSuccessor, utility::convertNumber<RationalFunction>(probability)));
                 }
                 while (!insertInOrder2.empty()) {
                     auto pair = insertInOrder2.top();
                     insertInOrder2.pop();
-                    builder.addNextValue(newStates[row][2], pair.first, pair.second);
+                    builder.addNextValue(newStates.at(row)[2], pair.first, pair.second);
                 }
                 
-                auto someJoinedState = joinedFirstStates[parameter][row].begin()->first;
-                for (auto const& label : joiningLabels[parameter][someJoinedState]) {
+                auto someJoinedState = joinedFirstStates.at(parameter).at(row).begin()->first;
+                for (auto const& label : joiningLabels.at(parameter).at(someJoinedState)) {
                     if (!newLabels.getLabels().count(label)) {
                         newLabels.addLabel(label);
                     }
                     for (uint_fast64_t i = 0; i < 3; i++) {
-                        newLabels.addLabelToState(label, newStates[row][i]);
+                        newLabels.addLabelToState(label, newStates.at(row)[i]);
                     }
                 }
                 if (stateRewardVector) {
@@ -400,12 +407,12 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         // First we mark which states to delete, then we complement the BitVector
         storage::BitVector statesToKeep(wipMatrix.getRowCount());
         for (auto const& parameter : allParameters) {
-            for (auto const& pair : joinedFirstStates[parameter]) {
+            for (auto const& pair : joinedFirstStates.at(parameter)) {
                 auto joiningState = pair.first;
                 for (auto const& pair2 : pair.second) {
                     // The identifier - the state the search started from
                     auto firstState = pair2.first;
-                    auto visitedStates = alreadyVisitedStates[parameter][firstState];
+                    auto visitedStates = alreadyVisitedStates.at(parameter).at(firstState);
 
                     // Delete everything up to the point where the joining state, which is not deleted, is met
                     for (auto const& visitedState : visitedStates) {
@@ -423,7 +430,8 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
         // Don't forget :)
         statesToKeep.complement();
         wipMatrix = wipMatrix.getSubmatrix(false, statesToKeep, statesToKeep, true);
-        newLabels = newLabels.getSubLabeling(statesToKeep);
+        models::sparse::StateLabeling copyOfNewLabels = newLabels;
+        newLabels = copyOfNewLabels.getSubLabeling(statesToKeep);
         if (stateRewardVector) {
             std::vector<RationalFunction> newStateRewards;
             for (uint_fast64_t i = 0; i < stateRewardVector->size(); i++) {
@@ -433,7 +441,8 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
             }
             stateRewardVector = newStateRewards;
         }
-        transitionMatrix = wipMatrix;
+        storage::SparseMatrix<RationalFunction> copyOfWipMatrix = wipMatrix;
+        transitionMatrix = copyOfWipMatrix;
     }
     models::sparse::Dtmc<RationalFunction> newDTMC(transitionMatrix, newLabels);
     
