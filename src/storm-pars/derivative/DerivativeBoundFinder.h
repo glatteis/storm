@@ -27,10 +27,11 @@ class DerivativeBoundFinder {
 
     void specifyFormula(Environment const& env, modelchecker::CheckTask<logic::Formula, FunctionType> const& checkTask) {
         // This simplification is mainly to convert until formulas into reachability formulas
-        transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
-        simplifier.simplify(checkTask.getFormula());
-        this->currentFormula = simplifier.getSimplifiedFormula();
-        model = *simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
+        // transformer::SparseParametricDtmcSimplifier<storm::models::sparse::Dtmc<FunctionType>> simplifier(model);
+        // simplifier.simplify(checkTask.getFormula());
+        // this->currentFormula = simplifier.getSimplifiedFormula();
+        // model = *simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<FunctionType>>();
+        this->currentFormula = checkTask.getFormula().asSharedPointer();
         this->currentCheckTask = std::make_unique<storm::modelchecker::CheckTask<storm::logic::Formula, FunctionType>>(
             checkTask.substituteFormula(*currentFormula).template convertValueType<FunctionType>());
 

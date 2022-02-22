@@ -1,4 +1,5 @@
 #include "MonotonicityPLAChecker.h"
+#include <_types/_uint64_t.h>
 #include <cstdint>
 #include <memory>
 #include "models/ModelBase.h"
@@ -90,10 +91,13 @@ void MonotonicityPLAChecker<FunctionType, ConstantType>::performMonotonicityPLA(
     storage::ParameterRegion<FunctionType> bigRegion(bigLower, bigUpper);
     
     auto initialState = getInitialState();
+    
+    const uint_fast64_t maxIterations = 10000;
 
     regionQueue.push(bigRegion);
+
     uint_fast64_t regionsComputed = 0;
-    while (!regionQueue.empty() && (positivelyMonotoneArea + negativelyMonotoneArea) < 1 - terminateArea && regionsComputed < 1000) {
+    while (!regionQueue.empty() && (positivelyMonotoneArea + negativelyMonotoneArea) < 1 - terminateArea && maxIterations < 1000) {
         regionsComputed++;
         storage::ParameterRegion<FunctionType> currRegion = regionQueue.front();
         regionQueue.pop();

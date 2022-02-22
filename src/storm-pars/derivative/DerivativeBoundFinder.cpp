@@ -204,6 +204,8 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
     const storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
     models::sparse::Dtmc<FunctionType> modelCopy = model;
     
+    model.reduceToStateBasedRewards();
+    
     std::vector<FunctionType> stateRewardsMax(transitionMatrix.getRowCount());
     std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
     
