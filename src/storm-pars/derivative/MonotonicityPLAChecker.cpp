@@ -1,5 +1,4 @@
 #include "MonotonicityPLAChecker.h"
-#include <_types/_uint64_t.h>
 #include <cstdint>
 #include <memory>
 #include "models/ModelBase.h"
