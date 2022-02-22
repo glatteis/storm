@@ -99,7 +99,7 @@ namespace storm {
             if (regionSettings.isRegionSet()) {
                 result = storm::api::parseRegions<ValueType>(regionSettings.getRegionString(), *model, splittingThreshold);
             } else if (regionSettings.isRegionBoundSet()) {
-                result = storm::api::createRegion<ValueType>(regionSettings.getRegionBoundString(), *model, splittingThreshold);
+                result = storm::api::createRegion<ValueType>(regionSettings.getRegionLowerBound(), regionSettings.getRegionUpperBound(), *model, splittingThreshold);
             }
             return result;
         }
@@ -179,7 +179,7 @@ namespace storm {
                 storm::utility::Stopwatch eliminationWatch(true);
                 std::shared_ptr<storm::models::ModelBase> result;
                 if (model->isOfType(storm::models::ModelType::Dtmc)) {
-                    STORM_PRINT("Applying scc elimination" << std::endl);
+                    STORM_PRINT("Applying scc elimination\n");
                     auto sparseModel = model->as<storm::models::sparse::Model<ValueType>>();
                     auto matrix = sparseModel->getTransitionMatrix();
                     auto backwardsTransitionMatrix = matrix.transpose();
@@ -243,13 +243,12 @@ namespace storm {
                     std::unordered_map<std::string, storm::models::sparse::StandardRewardModel<ValueType>> rewardModels;
                     if(model->hasUniqueRewardModel()) {
                         storm::utility::vector::filterVectorInPlace(actionRewards, keptRows);
-                        storm::models::sparse::StandardRewardModel<ValueType> rewardModel((boost::none, std::move(actionRewards)));
-                        rewardModels.insert(std::make_pair(model->getUniqueRewardModelName(), rewardModel));
+                        rewardModels.insert(std::make_pair(model->getUniqueRewardModelName(), storm::models::sparse::StandardRewardModel<ValueType>(boost::none, std::move(actionRewards))));
                     }
 
                     result= std::make_shared<storm::models::sparse::Dtmc<ValueType>>(std::move(newTransitionMatrix), sparseModel->getStateLabeling().getSubLabeling(selectedStates), std::move(rewardModels));
                     eliminationWatch.stop();
-                    STORM_PRINT(std::endl << "Time for scc elimination: " << eliminationWatch << "." << std::endl << std::endl);
+                    STORM_PRINT("\nTime for scc elimination: " << eliminationWatch << ".\n\n");
                     result->printModelInformationToStream(std::cout);
                 } else if (model->isOfType(storm::models::ModelType::Mdp)) {
                     STORM_LOG_THROW(false, storm::exceptions::NotImplementedException, "Unable to perform SCC elimination for monotonicity analysis on MDP: Not mplemented");
@@ -288,7 +287,7 @@ namespace storm {
             }
 
             simplifyingWatch.stop();
-            STORM_PRINT(std::endl << "Time for model simplification: " << simplifyingWatch << "." << std::endl << std::endl);
+            STORM_PRINT("\nTime for model simplification: " << simplifyingWatch << ".\n\n");
             result->printModelInformationToStream(std::cout);
             return result;
         }
@@ -300,12 +299,12 @@ namespace storm {
             auto transformationSettings = storm::settings::getModule<storm::settings::modules::TransformationSettings>();
             auto monSettings = storm::settings::getModule<storm::settings::modules::MonotonicitySettings>();
             auto derSettings = storm::settings::getModule<storm::settings::modules::DerivativeSettings>();
-            auto regSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
 
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             PreprocessResult result(model, false);
 
             
-            if (regSettings.isApplyEqualParameterReductionSet()) {
+            if (regionSettings.isApplyEqualParameterReductionSet()) {
                 result.changed = true;
                 auto oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
                 while (true) {
@@ -415,7 +414,7 @@ namespace storm {
             }
 
             if (result.changed) {
-                STORM_PRINT_AND_LOG(std::endl << "Time for model preprocessing: " << preprocessingWatch << "." << std::endl << std::endl);
+                STORM_PRINT_AND_LOG("\nTime for model preprocessing: " << preprocessingWatch << ".\n\n");
             }
             return result;
         }
@@ -449,23 +448,23 @@ namespace storm {
                     } else {
                         regionCheckResult->writeCondensedToStream(outStream);
                     }
-                    outStream << std::endl;
+                    outStream << '\n';
                     if (!regionSettings.isPrintNoIllustrationSet()) {
                         auto const* regionRefinementCheckResult = dynamic_cast<storm::modelchecker::RegionRefinementCheckResult<ValueType> const*>(regionCheckResult);
                         if (regionRefinementCheckResult != nullptr) {
                             regionRefinementCheckResult->writeIllustrationToStream(outStream);
                         }
                     }
-                    outStream << std::endl;
+                    outStream << '\n';
                     STORM_PRINT_AND_LOG(outStream.str());
                 } else {
-                    STORM_PRINT_AND_LOG(*result << std::endl);
+                    STORM_PRINT_AND_LOG(*result << '\n');
                 }
                 if (watch) {
-                    STORM_PRINT_AND_LOG("Time for model checking: " << *watch << "." << std::endl << std::endl);
+                    STORM_PRINT_AND_LOG("Time for model checking: " << *watch << ".\n\n");
                 }
             } else {
-                STORM_LOG_ERROR("Property is unsupported by selected engine/settings." << std::endl);
+                STORM_LOG_ERROR("Property is unsupported by selected engine/settings.\n");
             }
         }
 
@@ -547,7 +546,7 @@ namespace storm {
                 }
 
                 watch.stop();
-                STORM_PRINT_AND_LOG("Overall time for sampling all instances: " << watch << std::endl << std::endl);
+                STORM_PRINT_AND_LOG("Overall time for sampling all instances: " << watch << "\n\n");
             }
         }
 
@@ -634,7 +633,7 @@ namespace storm {
             for (auto const& entry : vars) {
                 std::cout << entry << " ";
             }
-            std::cout << std::endl;
+            std::cout << '\n';
 
             if (omittedParameters && !omittedParameters->empty()) {
                 std::cout << "Parameters ";
@@ -643,9 +642,9 @@ namespace storm {
                 }
                 std::cout << "are inconsequential.";
                 if (derSettings.areInconsequentialParametersOmitted()) {
-                    std::cout << " They will be omitted in the found instantiation." << std::endl;
+                    std::cout << " They will be omitted in the found instantiation.\n";
                 } else {
-                    std::cout << " They will be set to 0.5 in the found instantiation. To omit them, set the flag --omit-inconsequential-params." << std::endl;
+                    std::cout << " They will be set to 0.5 in the found instantiation. To omit them, set the flag --omit-inconsequential-params.\n";
                 }
             }
 
@@ -713,11 +712,11 @@ namespace storm {
                     std::cout << "Derivative w.r.t. " << parameter << ": ";
                     
                     auto result = modelChecker.check(Environment(), instantiation, parameter);
-                    std::cout << result->getValueVector()[initialState] << std::endl;
+                    std::cout << *result << '\n';
                 }
                 return;
             } else if (derSettings.isFeasibleInstantiationSearchSet()) {
-                STORM_PRINT("Finding an extremum using Gradient Descent" << std::endl);
+                STORM_PRINT("Finding an extremum using Gradient Descent\n");
                 storm::utility::Stopwatch derivativeWatch(true);
                 storm::derivative::GradientDescentInstantiationSearcher<storm::RationalFunction, double> derivativeChecker(*dtmc, *method, derSettings.getLearningRate(), derSettings.getAverageDecay(), derSettings.getSquaredAverageDecay(), derSettings.getMiniBatchSize(), derSettings.getTerminationEpsilon(), startPoint, *constraintMethod, derSettings.isPrintJsonSet());
                 storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> checkTask(*formula);
@@ -736,7 +735,7 @@ namespace storm {
                 if (derSettings.isPrintJsonSet()) {
                     derivativeChecker.printRunAsJson();
                 } else {
-                    std::cout << "Found value " << instantiationAndValue.second << " at instantiation " << std::endl;
+                    std::cout << "Found value " << instantiationAndValue.second << " at instantiation \n";
                     bool isFirstLoop = true;
                     for (auto const& p : instantiationAndValue.first) {
                         if (!isFirstLoop) {
@@ -745,9 +744,9 @@ namespace storm {
                         isFirstLoop = false;
                         std::cout << p.first << "=" << p.second;
                     }
-                    std::cout << std::endl;
+                    std::cout << '\n';
                 }
-                std::cout << "Finished in " << derivativeWatch << std::endl;
+                std::cout << "Finished in " << derivativeWatch << '\n';
                 return;
             }
         }
@@ -768,9 +767,9 @@ namespace storm {
                 if (monotonicityType == modelchecker::MonotonicityType::GRAPH) {
                     auto monotonicityHelper = storm::analysis::MonotonicityHelper<ValueType, double>(model, formulas, regions, monSettings.getNumberOfSamples(), storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision(), monSettings.isDotOutputSet());
                     if (monSettings.isExportMonotonicitySet()) {
-                        monotonicityHelper.checkMonotonicityInBuild(outfile, monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
+                        monotonicityHelper.checkMonotonicityInBuild(outfile, monSettings.isOptimisticOrderSet(), monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
                     } else {
-                        monotonicityHelper.checkMonotonicityInBuild(std::cout, monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
+                        monotonicityHelper.checkMonotonicityInBuild(std::cout, monSettings.isOptimisticOrderSet(), monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());
                     }
                 } else if (monotonicityType == modelchecker::MonotonicityType::LIFTING) {
                     auto dtmc = model->template as<storm::models::sparse::Dtmc<ValueType>>();
@@ -857,7 +856,7 @@ namespace storm {
             }
 
             monotonicityWatch.stop();
-            STORM_PRINT(std::endl << "Total time for monotonicity checking: " << monotonicityWatch << "." << std::endl << std::endl);
+            STORM_PRINT("\nTotal time for monotonicity checking: " << monotonicityWatch << ".\n\n");
             return;
         }
 
@@ -874,28 +873,35 @@ namespace storm {
                 STORM_LOG_THROW(property.getRawFormula()->hasQuantitativeResult(), storm::exceptions::NotSupportedException, "Extremum cannot be computed for this type of property.");
                 for (auto const& region : regions) {
                     if (monotonicitySettings.useMonotonicity) {
-                        STORM_PRINT_AND_LOG("Computing extremal value for property " << property.getName() << ": "
-                                                                                     << *property.getRawFormula()
-                                                                                     << " within region " << region
-                                                                                     << " and using monotonicity ..." << std::endl);
+                        if (monotonicitySettings.useOptimisticOrder) {
+                            STORM_PRINT_AND_LOG("Computing extremal value for property " << property.getName() << ": "
+                                                                                         << *property.getRawFormula()
+                                                                                         << " within region " << region
+                                                                                         << " and using optimistic monotonicity ..." << std::endl);
+                        } else {
+                            STORM_PRINT_AND_LOG("Computing extremal value for property " << property.getName() << ": "
+                                                                                         << *property.getRawFormula()
+                                                                                         << " within region " << region
+                                                                                         << " and using monotonicity ..." << std::endl);
+                        }
+
                     } else {
                         STORM_PRINT_AND_LOG("Computing extremal value for property " << property.getName() << ": "
                                                                                      << *property.getRawFormula()
                                                                                      << " within region " << region
-                                                                                     << "..." << std::endl);
+                                                                                     << "...\n");
                     }
                     storm::utility::Stopwatch watch(true);
-                    // TODO: hier eventueel checkExtremalValue van maken
                     if (regionSettings.isExtremumSuggestionSet()) {
                         ValueType suggestion = storm::utility::convertNumber<ValueType>(regionSettings.getExtremumSuggestion());
-                        if (storm::api::checkExtremalValue<ValueType>(model, storm::api::createTask<ValueType>(property.getRawFormula(), true), region, engine, direction, precision, suggestion, monotonicitySettings, generateSplitEstimates, monotoneParameters)) {
+                        if (storm::api::checkExtremalValue<ValueType>(model, storm::api::createTask<ValueType>(property.getRawFormula(), true), region, engine, direction, precision, regionSettings.isAbsolutePrecisionSet(), suggestion, monotonicitySettings, generateSplitEstimates, monotoneParameters)) {
                             STORM_PRINT_AND_LOG(suggestion << " is the extremum ");
                         } else {
                             STORM_PRINT_AND_LOG(suggestion << " is NOT the extremum ");
                         }
 
                     } else {
-                        auto valueValuation = storm::api::computeExtremalValue<ValueType>(model, storm::api::createTask<ValueType>(property.getRawFormula(), true), region, engine, direction, precision, monotonicitySettings, generateSplitEstimates, monotoneParameters);
+                        auto valueValuation = storm::api::computeExtremalValue<ValueType>(model, storm::api::createTask<ValueType>(property.getRawFormula(), true), region, engine, direction, precision, regionSettings.isAbsolutePrecisionSet(), monotonicitySettings, generateSplitEstimates, monotoneParameters);
                         watch.stop();
                         std::stringstream valuationStr;
                         bool first = true;
@@ -907,8 +913,8 @@ namespace storm {
                             }
                             valuationStr << v.first << "=" << v.second;
                         }
-                        STORM_PRINT_AND_LOG("Result at initial state: " << valueValuation.first << " ( approx. " << storm::utility::convertNumber<double>(valueValuation.first) << ") at [" << valuationStr.str() << "]." << std::endl)
-                        STORM_PRINT_AND_LOG("Time for model checking: " << watch << "." << std::endl);
+                        STORM_PRINT_AND_LOG("Result at initial state: " << valueValuation.first << " ( approx. " << storm::utility::convertNumber<double>(valueValuation.first) << ") at [" << valuationStr.str() << "].\n")
+                        STORM_PRINT_AND_LOG("Time for model checking: " << watch << ".\n");
                     }
                 }
             }
@@ -924,7 +930,7 @@ namespace storm {
             std::function<std::unique_ptr<storm::modelchecker::CheckResult>(std::shared_ptr<storm::logic::Formula const> const& formula)> verificationCallback;
             std::function<void(std::unique_ptr<storm::modelchecker::CheckResult> const&)> postprocessingCallback;
 
-            STORM_PRINT_AND_LOG(std::endl);
+            STORM_PRINT_AND_LOG('\n');
             if (regionSettings.isHypothesisSet()) {
                 STORM_PRINT_AND_LOG("Checking hypothesis " << regionSettings.getHypothesis() << " on ");
             } else {
@@ -944,7 +950,7 @@ namespace storm {
             // Check the given set of regions with or without refinement
             if (regionSettings.isRefineSet()) {
                 STORM_LOG_THROW(regions.size() == 1, storm::exceptions::NotSupportedException, "Region refinement is not supported for multiple initial regions.");
-                STORM_PRINT_AND_LOG(" with iterative refinement until " << (1.0 - regionSettings.getCoverageThreshold()) * 100.0 << "% is covered." << (regionSettings.isDepthLimitSet() ? " Depth limit is " + std::to_string(regionSettings.getDepthLimit()) + "." : "") << std::endl);
+                STORM_PRINT_AND_LOG(" with iterative refinement until " << (1.0 - regionSettings.getCoverageThreshold()) * 100.0 << "% is covered." << (regionSettings.isDepthLimitSet() ? " Depth limit is " + std::to_string(regionSettings.getDepthLimit()) + "." : "") << '\n');
                 verificationCallback = [&] (std::shared_ptr<storm::logic::Formula const> const& formula) {
                     ValueType refinementThreshold = storm::utility::convertNumber<ValueType>(regionSettings.getCoverageThreshold());
                     boost::optional<uint64_t> optionalDepthLimit;
@@ -956,7 +962,7 @@ namespace storm {
                     return result;
                 };
             } else {
-                STORM_PRINT_AND_LOG("." << std::endl);
+                STORM_PRINT_AND_LOG(".\n");
                 verificationCallback = [&] (std::shared_ptr<storm::logic::Formula const> const& formula) {
                     std::unique_ptr<storm::modelchecker::CheckResult> result = storm::api::checkRegionsWithSparseEngine<ValueType>(model, storm::api::createTask<ValueType>(formula, true), regions, engine, regionSettings.getHypothesis());
                     return result;
@@ -1142,11 +1148,8 @@ namespace storm {
                             storm::api::parseMonotoneParameters<ValueType>(monSettings.getMonotoneParameterFilename(),
                                     model->as<storm::models::sparse::Model<ValueType>>()));
                 }
-// TODO: is onlyGlobalSet was used here
-                verifyParametricModel<DdType, ValueType>(model, input, regions, samples,
-                                                         storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false,
-                                                                                         monSettings.isUsePLABoundsSet(), monSettings.getMonotonicityType()),
-                                                         monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
+                // TODO: is onlyGlobalSet was used here
+                verifyParametricModel<DdType, ValueType>(model, input, regions, samples, storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false, monSettings.isUsePLABoundsSet(), monSettings.isOptimisticOrderSet(), monSettings.getMonotonicityType()), monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
             }
         }
 

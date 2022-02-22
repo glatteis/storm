@@ -26,7 +26,7 @@ namespace storm {
             virtual ~ParameterRegion() = default;
 
             std::set<VariableType> const& getVariables() const;
-            std::multimap<CoefficientType, VariableType> const& getVariablesSorted() const;
+            std::multimap<CoefficientType, VariableType> getVariablesSorted() const;
             CoefficientType const& getLowerBoundary(VariableType const& variable) const;
             CoefficientType const& getLowerBoundary(const std::string varName) const;
             CoefficientType const& getUpperBoundary(VariableType const& variable) const;
@@ -72,8 +72,10 @@ namespace storm {
              */
             void split(Valuation const& splittingPoint, std::vector<ParameterRegion<ParametricType>>& regionVector) const;
             void split(Valuation const& splittingPoint, std::vector<ParameterRegion<ParametricType>>& regionVector, std::set<VariableType> const& consideredVariables) const;
+            void split(Valuation const& splittingPoint, std::vector<ParameterRegion<ParametricType>>& regionVector, std::set<VariableType> const& consideredVariables, std::set<VariableType> const& possiblyMonotoneParameters) const;
 
             Valuation getPoint(storm::solver::OptimizationDirection dir, storm::analysis::MonotonicityResult<VariableType> & monRes) const;
+            Valuation getPoint(storm::solver::OptimizationDirection dir, storm::analysis::MonotonicityResult<VariableType> & monRes, std::set<VariableType> const& monIncrParameters, std::set<VariableType> const& monDecrParameters) const;
             Valuation getPoint(storm::solver::OptimizationDirection dir, std::set<VariableType> const& possibleMonotoneIncrParameters, std::set<VariableType>const & monDecrParameters) const;
 
             //returns the region as string in the format 0.3<=p<=0.4,0.2<=q<=0.5;
@@ -94,7 +96,7 @@ namespace storm {
             Valuation lowerBoundaries;
             Valuation upperBoundaries;
             std::set<VariableType> variables;
-            std::multimap<CoefficientType, VariableType> sortedOnDifference;
+//            std::multimap<CoefficientType, VariableType> sortedOnDifference;
             CoefficientType parentBound;
         };
 

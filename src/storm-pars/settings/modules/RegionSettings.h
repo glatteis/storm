@@ -38,9 +38,13 @@ namespace storm {
                 bool isRegionBoundSet() const;
 
                 /*!
-                 * Retrieves the region definition string
+                 * Retrieves the lowerbound of the region
                  */
-                std::string getRegionBoundString() const;
+                double getRegionLowerBound() const;
+                /*!
+                 * Retrieves the upperbound of the region
+                 */
+                double getRegionUpperBound() const;
 				/*!
 				 * Retrieves whether region(s) were declared
 				 */
@@ -86,6 +90,8 @@ namespace storm {
 				 * Retrieves the precision for the extremal value
 				 */
 				double getExtremumValuePrecision() const;
+
+				bool isAbsolutePrecisionSet() const;
 
                 bool isExtremumSuggestionSet() const;
 

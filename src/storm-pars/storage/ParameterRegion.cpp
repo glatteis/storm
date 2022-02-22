@@ -33,7 +33,6 @@ namespace storm {
                 STORM_LOG_THROW((variableWithUpperBoundary != upperBoundaries.end()), storm::exceptions::InvalidArgumentException, "Could not create region. No upper boundary specified for Variable " << variableWithLowerBoundary.first);
                 STORM_LOG_THROW((variableWithLowerBoundary.second<=variableWithUpperBoundary->second), storm::exceptions::InvalidArgumentException, "Could not create region. The lower boundary for " << variableWithLowerBoundary.first << " is larger then the upper boundary");
                 this->variables.insert(variableWithLowerBoundary.first);
-                this->sortedOnDifference.insert({variableWithLowerBoundary.second - variableWithUpperBoundary->second, variableWithLowerBoundary.first});
             }
             for (auto const& variableWithBoundary : this->upperBoundaries) {
                 STORM_LOG_THROW((this->variables.find(variableWithBoundary.first) != this->variables.end()), storm::exceptions::InvalidArgumentException, "Could not create region. No lower boundary specified for Variable " << variableWithBoundary.first);
@@ -47,8 +46,12 @@ namespace storm {
         }
 
         template<typename ParametricType>
-        std::multimap<typename ParameterRegion<ParametricType>::CoefficientType , typename ParameterRegion<ParametricType>::VariableType> const& ParameterRegion<ParametricType>::getVariablesSorted() const {
-            return this->sortedOnDifference;
+        std::multimap<typename ParameterRegion<ParametricType>::CoefficientType , typename ParameterRegion<ParametricType>::VariableType> ParameterRegion<ParametricType>::getVariablesSorted() const {
+                std::multimap<typename ParameterRegion<ParametricType>::CoefficientType , typename ParameterRegion<ParametricType>::VariableType> res;
+                for (auto& var : this->variables) {
+                    res.insert({this->getUpperBoundary(var) - this->getLowerBoundary(var), var});
+                }
+                return res;
         }
 
         template<typename ParametricType>
@@ -130,7 +133,6 @@ namespace storm {
             return resultingVector;
         }
 
-
         template<typename ParametricType>
         typename ParameterRegion<ParametricType>::Valuation ParameterRegion<ParametricType>::getSomePoint() const {
             return this->getLowerBoundaries();
@@ -165,6 +167,8 @@ namespace storm {
 
             auto vertices = getVerticesOfRegion(consideredVariables);
 
+            bool first = true;
+            bool zero = true;
             for (auto const &vertex : vertices) {
                 //The resulting subregion is the smallest region containing vertex and splittingPoint.
                 Valuation subLower, subUpper;
@@ -186,9 +190,34 @@ namespace storm {
                 ParameterRegion<ParametricType> subRegion(std::move(subLower), std::move(subUpper));
                 subRegion.setSplitThreshold(this->getSplitThreshold());
 
-                if (!storm::utility::isZero(subRegion.area())) {
+                if (first) {
+                     zero = storm::utility::isZero(subRegion.area());
+                     first = false;
+                }
+                if (!zero) {
                     regionVector.push_back(std::move(subRegion));
                 }
+            }
+        }
+
+        template<typename ParametricType>
+        void ParameterRegion<ParametricType>::split(Valuation const& splittingPoint, std::vector<storm::storage::ParameterRegion<ParametricType>> &regionVector,
+                                                    const std::set<VariableType> &consideredVariables, const std::set<VariableType> &possiblyMonotoneVariables) const {
+            std::vector<storm::storage::ParameterRegion<ParametricType>> regionVectorTemp;
+            this->split(splittingPoint, regionVectorTemp, consideredVariables);
+            std::set<VariableType> monVars;
+            for (auto& var : consideredVariables) {
+                if (possiblyMonotoneVariables.find(var) != possiblyMonotoneVariables.end()) {
+                    monVars.insert(var);
+                }
+            }
+            // Split again in the monotone parameters
+            if (monVars.size() > 0) {
+                for (storm::storage::ParameterRegion<ParametricType>& region : regionVectorTemp) {
+                    region.split(region.getCenterPoint(), regionVector, monVars);
+                }
+            } else {
+                regionVector = std::move(regionVectorTemp);
             }
         }
 
@@ -239,6 +268,28 @@ namespace storm {
         template<typename ParametricType>
         typename ParameterRegion<ParametricType>::Valuation ParameterRegion<ParametricType>::getPoint(storm::solver::OptimizationDirection dir, storm::analysis::MonotonicityResult<VariableType> &monRes) const {
             auto val = this->getCenterPoint();
+            for (auto monResEntry : monRes.getMonotonicityResult()) {
+                if (monRes.isDoneForVar(monResEntry.first)) {
+                    if (monResEntry.second == storm::analysis::MonotonicityResult<VariableType>::Monotonicity::Incr) {
+                        val[monResEntry.first] = storm::solver::minimize(dir) ? getLowerBoundary(monResEntry.first) : getUpperBoundary(monResEntry.first);
+                    } else if (monResEntry.second == storm::analysis::MonotonicityResult<VariableType>::Monotonicity::Decr) {
+                        val[monResEntry.first] = storm::solver::maximize(dir) ? getLowerBoundary(monResEntry.first) : getUpperBoundary(monResEntry.first);
+                    }
+                }
+            }
+            return val;
+        }
+
+        template<typename ParametricType>
+        typename ParameterRegion<ParametricType>::Valuation ParameterRegion<ParametricType>::getPoint(storm::solver::OptimizationDirection dir, storm::analysis::MonotonicityResult<VariableType> &monRes,std::set<VariableType> const &monIncrParameters,
+                                                                                                      std::set<VariableType> const &monDecrParameters) const {
+            auto val = this->getCenterPoint();
+            for (auto& var : monIncrParameters) {
+                val[var] = storm::solver::minimize(dir) ? getLowerBoundary(var) : getUpperBoundary(var);
+            }
+            for (auto& var : monDecrParameters) {
+                val[var] = storm::solver::maximize(dir) ? getLowerBoundary(var) : getUpperBoundary(var);
+            }
             for (auto monResEntry : monRes.getMonotonicityResult()) {
                 if (monRes.isDoneForVar(monResEntry.first)) {
                     if (monResEntry.second == storm::analysis::MonotonicityResult<VariableType>::Monotonicity::Incr) {

@@ -8,12 +8,30 @@ namespace storm {
     RewardOrderExtenderDtmc<ValueType, ConstantType>::RewardOrderExtenderDtmc(std::shared_ptr<models::sparse::Model<ValueType>> model, std::shared_ptr<logic::Formula const> formula) : OrderExtender<ValueType, ConstantType>(model, formula) {
             this->rewardModel = this->model->getUniqueRewardModel();
             this->assumptionMaker = new AssumptionMaker<ValueType, ConstantType>(this->matrix, std::make_shared<storm::models::sparse::StandardRewardModel<ValueType>>(this->model->getUniqueRewardModel()));
+            for (uint_fast64_t i = 0; i < this->numberOfStates; ++i) {
+                if (rewardModel.hasStateActionRewards()) {
+                    STORM_LOG_ASSERT(rewardModel.getStateActionReward(i).isConstant(), "Expecting rewards to be constant");
+                } else if (rewardModel.hasStateRewards()) {
+                    STORM_LOG_ASSERT(rewardModel.getStateReward(i).isConstant(), "Expecting rewards to be constant");
+                } else {
+                    STORM_LOG_ASSERT(false, "Expecting reward");
+                }
+            }
         }
 
         template<typename ValueType, typename ConstantType>
         RewardOrderExtenderDtmc<ValueType, ConstantType>::RewardOrderExtenderDtmc(storm::storage::BitVector& topStates,  storm::storage::BitVector& bottomStates, storm::storage::SparseMatrix<ValueType> matrix, storm::models::sparse::StandardRewardModel<ValueType> rewardModel) : OrderExtender<ValueType, ConstantType>(topStates, bottomStates, matrix) {
             this->rewardModel = rewardModel;
-            this->assumptionMaker = new AssumptionMaker<ValueType, ConstantType>(this->matrix, std::make_shared<storm::models::sparse::StandardRewardModel<ValueType>>(rewardModel));
+            this->assumptionMaker = new AssumptionMaker<ValueType, ConstantType>(this->matrix, std::make_shared<storm::models::sparse::StandardRewardModel<ValueType>>(rewardModel));for (uint_fast64_t i = 0; i < this->numberOfStates; ++i) {
+                if (rewardModel.hasStateActionRewards()) {
+                    STORM_LOG_ASSERT(rewardModel.getStateActionReward(i).isConstant(), "Expecting rewards to be constant");
+                } else if (rewardModel.hasStateRewards()) {
+                    STORM_LOG_ASSERT(rewardModel.getStateReward(i).isConstant(), "Expecting rewards to be constant");
+                } else {
+                    STORM_LOG_ASSERT(false, "Expecting reward");
+                }
+            }
+
         }
 
         template<typename ValueType, typename ConstantType>
@@ -22,12 +40,39 @@ namespace storm {
             bool addedSomething = false;
             auto& successors = this->getSuccessors(currentState);
 
+//            if (successors.size() == 2 && rewardHack(order, currentState, successors.at(0), successors.at(1))) {
+//                STORM_LOG_ASSERT (order->contains(currentState), "Expecting order to contain state " << currentState);
+//                STORM_LOG_ASSERT (order->compare(order->getNode(currentState), order->getBottom()) == Order::ABOVE, "Expecting " << currentState << " to be above " << *order->getBottom()->states.begin());
+//                return std::make_pair(this->numberOfStates, this->numberOfStates);
+//            }
+
             // We sort the states, and then apply min/max comparison.
             // This also adds states to the order if they are not yet sorted, but can be sorted based on min/max values
 
             auto sortedSuccStates = this->sortStatesOrderAndMinMax(successors, order);
+
             if (sortedSuccStates.first.first != this->numberOfStates) {
-                return sortedSuccStates.first;
+                if (successors.size() == 2 && (successors.at(0) == currentState || successors.at(1) == currentState)) {
+                    // current state actually only has one real successor
+                    auto realSucc = successors.at(0) == currentState ? successors.at(1) : successors.at(0);
+                    ValueType reward = ValueType(0);
+                    if (rewardModel.hasStateActionRewards()) {
+                        reward = rewardModel.getStateActionReward(currentState);
+                    } else if (rewardModel.hasStateRewards()) {
+                        reward = rewardModel.getStateReward(currentState);
+                    } else {
+                        STORM_LOG_ASSERT(false, "Expecting reward");
+                    }
+
+                    if (reward.isZero()) {
+                        order->addToNode(currentState, order->getNode(realSucc));
+                    } else {
+                        order->addAbove(currentState, order->getNode(realSucc));
+                    }
+
+                } else {
+                    return sortedSuccStates.first;
+                }
             } else {
                 // We could order all successor states
                 ValueType reward = ValueType(0);
@@ -102,6 +147,10 @@ namespace storm {
                 this->bottomStates = propositionalChecker.check(this->formula->asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula())->asExplicitQualitativeCheckResult().getTruthValuesVector();
             }
 
+            if (this->bottomStates->getNumberOfSetBits() == 0) {
+                return nullptr;
+            }
+
             std::vector<uint64_t> firstStates;
             storm::storage::BitVector subStates (this->bottomStates->size(), true);
 
@@ -118,7 +167,8 @@ namespace storm {
                 decomposition = storm::storage::StronglyConnectedComponentDecomposition<ValueType>(this->matrix, options);
             }
 
-            auto statesSorted = storm::utility::graph::getTopologicalSort(this->matrix.transpose(), firstStates);
+            transposeMatrix = this->matrix.transpose();
+            auto statesSorted = storm::utility::graph::getTopologicalSort(transposeMatrix, firstStates);
 
             // Create Order
             std::shared_ptr<Order> order = std::shared_ptr<Order>(new Order(&(this->topStates.get()), &(this->bottomStates.get()), this->numberOfStates, std::move(decomposition), std::move(statesSorted), isOptimistic));
@@ -140,17 +190,120 @@ namespace storm {
 
                 for (uint_fast64_t i = 0; i < this->numberOfStates; i++) {
                     auto& successors = this->getSuccessors(i);
+                    bool allSorted = true;
                     for (uint_fast64_t succ1 = 0; succ1 <successors.size(); ++succ1) {
                         for (uint_fast64_t succ2 = succ1 + 1; succ2 < successors.size(); ++succ2) {
-                            this->addStatesBasedOnMinMax(order, succ1, succ2);
+                            allSorted = this->addStatesBasedOnMinMax(order, succ1, succ2) != Order::NodeComparison::UNKNOWN && allSorted;
                         }
+                    }
+                    if (allSorted) {
+                        order->setSufficientForState(i);
                     }
                 }
             } else {
                 this->usePLA[order] = false;
             }
             this->continueExtending[order] = true;
+
+            for (uint_fast64_t i = 0; i < this->numberOfStates; ++i) {
+                auto& successors = this->getSuccessors(i);
+                if (successors.size() == 2) {
+                    rewardHack(order, i, successors.at(0), successors.at(1));
+                }
+            }
+
+            for (uint_fast64_t i : order->getBottom()->states) {
+                for (auto& entry : transposeMatrix.getRow(i)) {
+                    order->addStateToHandle(entry.getColumn());
+                }
+            }
+
+            for (uint_fast64_t i = 0; i < this->numberOfStates; ++i) {
+                auto& successorsI = this->getSuccessors(i);
+                if (successorsI.size() == 2) {
+                    for (uint_fast64_t j = i + 1; j < this->numberOfStates; ++j) {
+                        auto& successorsJ = this->getSuccessors(j);
+                        bool checkReward = false;
+
+                        if (successorsI[0] == successorsJ[0] && successorsI[1] == successorsJ[1]) {
+                            checkReward = this->matrix.getRow(i).begin()->getValue() == this->matrix.getRow(j).begin()->getValue();
+                        }
+
+                        if (checkReward) {
+                            // check welke reward t grootste is
+
+                            ValueType rewardI = ValueType(0);
+                            ValueType rewardJ = ValueType(0);
+                            if (rewardModel.hasStateActionRewards()) {
+                                rewardI = rewardModel.getStateActionReward(i);
+                                rewardJ = rewardModel.getStateActionReward(j);
+                            } else if (rewardModel.hasStateRewards()) {
+                                rewardI = rewardModel.getStateReward(i);
+                                rewardJ = rewardModel.getStateReward(j);
+                            } else {
+                                STORM_LOG_ASSERT(false, "Expecting reward");
+                            }
+
+                            if (!order->contains(i)) {
+                                order->add(i);
+                                order->addStateToHandle(i);
+                            }
+                            if (!order->contains(j)) {
+                                order->add(j);
+                                order->addStateToHandle(j);
+                            }
+                            if (rewardI.constantPart() > rewardJ.constantPart()) {
+                                order->addAbove(i, order->getNode(j));
+                            } else if (rewardJ.constantPart() > rewardI.constantPart()) {
+                                order->addAbove(j, order->getNode(i));
+                            } else {
+                                order->addRelation(i, j, true);
+                            }
+
+                        }
+                    }
+                }
+            }
             return order;
+        }
+
+        template<typename ValueType, typename ConstantType>
+        bool RewardOrderExtenderDtmc<ValueType, ConstantType>::rewardHack(std::shared_ptr<Order> order, uint_fast64_t currentState, uint_fast64_t succ0, uint_fast64_t succ1) {
+                if (this->getSuccessors(succ0).size() == 1 && this->getSuccessors(succ0).at(0) == currentState) {
+                    // We have curr --> succ0 and curr --> succ1 and succ0 --> curr
+                    if (!order->contains(currentState)) {
+                        order->add(currentState);
+                        order->addStateToHandle(currentState);
+                    }
+                    if (!order->contains(succ1)) {
+                        order->add(succ1);
+                        order->addStateToHandle(succ1);
+                    }
+                    if (!order->contains(succ0)) {
+                        order->addStateToHandle(succ1);
+                    }
+                    this->handleOneSuccessor(order, succ0, currentState);
+                    order->addAbove(currentState, order->getNode(succ1));
+                    return false;
+                }
+                if (this->getSuccessors(succ1).size() == 1 && this->getSuccessors(succ1).at(0) == currentState) {
+                    // We have curr --> succ0 and curr --> succ1 and succ1 --> curr
+                    if (!order->contains(currentState)) {
+                        order->add(currentState);
+                        order->addStateToHandle(currentState);
+                    }
+                    if (!order->contains(succ0)) {
+                        order->add(succ0);
+                        order->addStateToHandle(succ0);
+                    }
+                    if (!order->contains(succ1)) {
+                        order->addStateToHandle(succ1);
+                    }
+                    this->handleOneSuccessor(order, succ1, currentState);
+                    order->addAbove(currentState, order->getNode(succ0));
+                    return true;
+                }
+                return false;
         }
 
         template<typename ValueType, typename ConstantType>
@@ -158,10 +311,55 @@ namespace storm {
             STORM_LOG_INFO("Doing Forward reasoning");
             STORM_LOG_ASSERT(order->contains(currentState), "Expecting order to contain the current state for forward reasoning");
 
+            auto& successors = this->getSuccessors(currentState);
+//            if (successors.size() == 2 && rewardHack(order, currentState, successors.at(0), successors.at(1))) {
+//                STORM_LOG_ASSERT (order->contains(currentState), "Expecting order to contain state " << currentState);
+//                STORM_LOG_ASSERT (order->compare(order->getNode(currentState), order->getBottom()) == Order::ABOVE, "Expecting " << currentState << " to be above " << *order->getBottom()->states.begin());
+//                return std::make_pair(this->numberOfStates, this->numberOfStates);
+//            }
+
+            if (successors.size() == 2 && (successors.at(0) == currentState || successors.at(1) == currentState)) {
+                // current state actually only has one real successor
+                auto realSucc = successors.at(0) == currentState ? successors.at(1) : successors.at(0);
+                ValueType reward = ValueType(0);
+                if (rewardModel.hasStateActionRewards()) {
+                    reward = rewardModel.getStateActionReward(currentState);
+                } else if (rewardModel.hasStateRewards()) {
+                    reward = rewardModel.getStateReward(currentState);
+                } else {
+                    STORM_LOG_ASSERT(false, "Expecting reward");
+                }
+
+                if (reward.isZero()) {
+                    if (!order->contains(realSucc)) {
+                        order->add(realSucc);
+                        order->addStateToHandle(realSucc);
+                    }
+                    order->addToNode(currentState, order->getNode(realSucc));
+                } else {
+                    if (!order->contains(realSucc)) {
+                        order->add(realSucc);
+                        order->addStateToHandle(realSucc);
+                    }
+                    order->addAbove(currentState, order->getNode(realSucc));
+                }
+                return {this->numberOfStates, this->numberOfStates};
+            } else if (successors.size() == 2 && (order->isBottomState(successors.at(0)) || order->isBottomState(successors.at(1)))) {
+                auto bottomState = order->isBottomState(successors.at(0)) ? successors.at(0) : successors.at(1);
+                auto otherState = order->isBottomState(successors.at(0)) ? successors.at(1) : successors.at(0);
+                // If there is only one transition going into bottomState (+ selfloop) we can do some normal forward reasoning
+                if (transposeMatrix.getRow(bottomState).getNumberOfEntries() == 2) {
+                    if (!order->contains(otherState)) {
+                        order->add(otherState);
+                        order->addStateToHandle(otherState);
+                    }
+                    order->addBetween(currentState, otherState, bottomState);
+                }
+            }
 
             if (this->usePLA[order]) {
                 // try to sort stuff with assumptions, done here so the order of succs doesn't matter
-                for (auto& succ : this->getSuccessors(currentState)) {
+                for (auto& succ : successors) {
                     if (order->compare(succ, currentState) == Order::NodeComparison::UNKNOWN) {
                         auto assumptions = this->assumptionMaker->createAndCheckAssumptions(currentState, succ, order, region, this->minValues[order], this->maxValues[order]);
                         if (assumptions.size() == 1 && assumptions.begin()->second == storm::analysis::AssumptionStatus::VALID) {
@@ -223,6 +421,7 @@ namespace storm {
                     if (!order->contains(s1)) {
                         // It could be that s1 was not yet added, and could only be sorted because the other state was top/bottom, so we add it.
                         order->add(s1);
+                        order->addStateToHandle(s1);
                     }
                     // Relation between s1 and currState is still unknown, maybe we can find out
 
@@ -270,6 +469,9 @@ namespace storm {
                 std::pair<uint_fast64_t, uint_fast64_t> result =  {this->numberOfStates, this->numberOfStates};
 
                 if (successors.size() == 1) {
+                    if (!currentStateMode.second && !order->contains(successors[0])) {
+                        order->add(successors[0]);
+                    }
                     STORM_LOG_ASSERT (order->contains(successors[0]), "Expecting order to contain successor of state " << currentState);
                     this->handleOneSuccessor(order, currentState, successors[0]);
                 } else if (!successors.empty()) {
@@ -301,6 +503,9 @@ namespace storm {
                             this->checkParOnStateMonRes(currentState, order, param, region, monRes);
                         }
                     }
+                    for (auto& entry : transposeMatrix.getRow(currentState)) {
+                        order->addStateToHandle(entry.getColumn());
+                    }
                     // Get the next state
                     currentStateMode = this->getNextState(order, currentState, true);
                 } else {
@@ -315,6 +520,9 @@ namespace storm {
                         if (!order->contains(currentState)) {
                             // State is not parametric, so we hope that just adding it between =) and =( will help us
                             order->add(currentState);
+                        }
+                        for (auto& entry : transposeMatrix.getRow(currentState)) {
+                            order->addStateToHandle(entry.getColumn());
                         }
                         currentStateMode = this->getNextState(order, currentState, true);
                         continue;
@@ -331,6 +539,7 @@ namespace storm {
                         }
                     }
                 }
+
                 STORM_LOG_ASSERT (order->sortStates(successors).size() == successors.size(), "Expecting all successor states to be sorted");
             }
 

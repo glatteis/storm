@@ -374,7 +374,6 @@ namespace storm {
                         solver->setInitialScheduler(std::move(maxSchedChoices.get()));
                 }
 
-
                 if (this->currentCheckTask->isBoundSet() && solver->hasInitialScheduler()) {
                     // If we reach this point, we know that after applying the hint, the x-values can only become larger (if we maximize) or smaller (if we minimize).
                     std::unique_ptr<storm::solver::TerminationCondition<ConstantType>> termCond;
@@ -486,6 +485,12 @@ namespace storm {
                             useRegionSplitEstimates = true;
                         }
                     }
+                } else {
+                    if (deltaLower[p] > deltaUpper[p]) {
+                        regionSplitEstimates.insert(std::make_pair(p, deltaUpper[p]));
+                    } else {
+                        regionSplitEstimates.insert(std::make_pair(p, deltaLower[p]));
+                    }
                 }
             }
             // large regionsplitestimate implies that parameter p occurs as p and 1-p at least once
@@ -565,7 +570,6 @@ namespace storm {
                 }
                 std::shared_ptr<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>> castedPointerRewDtmc = std::dynamic_pointer_cast<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>>(this->orderExtender);
                 if (castedPointerRewDtmc != nullptr) {
-                    assert (false);
                     res = castedPointerRewDtmc->extendOrder(order, region);
                 }
                 STORM_LOG_ASSERT(std::get<0>(res) != nullptr, "Unexpected order extender type");
@@ -597,9 +601,8 @@ namespace storm {
                 if (castedPointerRewDtmc != nullptr) {
                     res = castedPointerRewDtmc->toOrder(region, isOptimistic);
                 }
-                STORM_LOG_ASSERT(std::get<0>(res) != nullptr, "Unexpected order extender type");
                 std::shared_ptr<storm::analysis::Order> order = std::get<0>(res);
-                if (std::get<1>(res) != order->getNumberOfStates()) {
+                if (order != nullptr && std::get<1>(res) != order->getNumberOfStates()) {
                     this->orderExtender->setUnknownStates(order, std::get<1>(res), std::get<2>(res));
                 }
                 return order;
@@ -631,8 +634,8 @@ namespace storm {
                             auto monotonicity = localMonotonicityResult->getMonotonicity(state, var);
                             if (monotonicity == Monotonicity::Unknown || monotonicity == Monotonicity::Not) {
                                 monotonicity = monotonicityChecker->checkLocalMonotonicity(order, state, var, region);
-                                if (monotonicity == Monotonicity::Unknown || monotonicity == Monotonicity::Not) {
-                                    // TODO: Skip for now?
+                                if (monotonicity == Monotonicity::Unknown ) {
+                                    // We skip it
                                 } else {
                                     localMonotonicityResult->setMonotonicity(state, var, monotonicity);
                                 }
@@ -689,20 +692,22 @@ namespace storm {
                 if (regionSplitEstimationsEnabled && useRegionSplitEstimates) {
                     STORM_LOG_INFO("Splitting based on region split estimates");
                     for (auto &entry : regionSplitEstimates) {
-                        assert (!this->isUseMonotonicitySet() || (!monRes.isMonotone(entry.first) && this->possibleMonotoneParameters.find(entry.first) != this->possibleMonotoneParameters.end()));
-//                            sortedOnValues.insert({-(entry.second * storm::utility::convertNumber<double>(region.getDifference(entry.first))* storm::utility::convertNumber<double>(region.getDifference(entry.first))), entry.first});
+                        if (this->possibleMonotoneParameters.find(entry.first) != this->possibleMonotoneParameters.end()) {
+                            sortedOnValues.insert({-(entry.second) * storm::utility::convertNumber<double>(region.getDifference(entry.first)), entry.first});
+                        } else {
                             sortedOnValues.insert({-(entry.second ), entry.first});
+                        }
                     }
 
                     for (auto itr = sortedOnValues.begin(); itr != sortedOnValues.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
                         consideredVariables.insert(itr->second);
                     }
                     assert (consideredVariables.size() > 0);
-                    region.split(region.getCenterPoint(), regionVector, std::move(consideredVariables));
+                    region.split(region.getCenterPoint(), regionVector, std::move(consideredVariables), this->possibleMonotoneParameters);
                 } else {
                     STORM_LOG_INFO("Splitting based on sorting");
 
-                    auto &sortedOnDifference = region.getVariablesSorted();
+                    auto sortedOnDifference = region.getVariablesSorted();
                     for (auto itr = sortedOnDifference.begin(); itr != sortedOnDifference.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
                         if (!this->isUseMonotonicitySet() || !monRes.isMonotone(itr->second)) {
                             consideredVariables.insert(itr->second);
@@ -727,7 +732,7 @@ namespace storm {
                     }
                 }
                 if (consideredVariables.size() == 0) {
-                    auto &sortedOnDifference = region.getVariablesSorted();
+                    auto sortedOnDifference = region.getVariablesSorted();
                     for (auto itr = sortedOnDifference.begin(); itr != sortedOnDifference.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
                         consideredVariables.insert(itr->second);
                     }

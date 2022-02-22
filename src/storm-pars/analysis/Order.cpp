@@ -134,7 +134,7 @@ namespace storm {
         }
 
         void Order::addBetween(uint_fast64_t state, Node *above, Node *below) {
-            STORM_LOG_INFO("Add " << state << " between (above) " << *above->states.begin() << " and " << *below->states.begin() << std::endl);
+            STORM_LOG_INFO("Add " << state << " between (above) " << *above->states.begin() << " and " << *below->states.begin() << '\n');
 
             STORM_LOG_ASSERT (above != below, "Cannot add between the same nodes");
             if(above == nullptr){
@@ -187,6 +187,10 @@ namespace storm {
         }
 
         void Order::addRelationNodes(Order::Node *above, Order::Node * below, bool allowMerge) {
+            if (above == below) {
+                this->invalid = true;
+                return;
+            }
             if (compare(above, below) == BELOW) {
                 if (allowMerge) {
                     mergeNodes(above, below);
@@ -227,7 +231,7 @@ namespace storm {
         }
 
         bool Order::mergeNodes(storm::analysis::Order::Node *node1, storm::analysis::Order::Node *node2) {
-            STORM_LOG_INFO("Merge " << *node1->states.begin() << " and " << *node2->states.begin() << std::endl);
+            STORM_LOG_INFO("Merge " << *node1->states.begin() << " and " << *node2->states.begin() << '\n');
 
             // Merges node2 into node 1
             // everything above n2 also above n1
@@ -605,10 +609,10 @@ namespace storm {
 
         void Order::toDotOutput() const {
             // Graphviz Output start
-            STORM_PRINT("Dot Output:" << std::endl << "digraph model {" << std::endl);
+            STORM_PRINT("Dot Output:\n" << "digraph model {\n");
 
             // Vertices of the digraph
-            storm::storage::BitVector stateCoverage = storm::storage::BitVector(sufficientForState);
+            storm::storage::BitVector stateCoverage = storm::storage::BitVector(numberOfStates);
             for (auto i = 0; i < numberOfStates; ++i) {
                 if (nodes[i] != nullptr) {
                     stateCoverage.set(i);
@@ -641,12 +645,12 @@ namespace storm {
                 }
             }
             // Graphviz Output end
-            STORM_PRINT("}" << std::endl);
+            STORM_PRINT("}\n");
         }
 
         void Order::dotOutputToFile(std::ostream &dotOutfile) const {
             // Graphviz Output start
-            dotOutfile << "Dot Output:" << std::endl << "digraph model {" << std::endl;
+            dotOutfile << "Dot Output:\n" << "digraph model {\n";
 
             // Vertices of the digraph
             storm::storage::BitVector stateCoverage = storm::storage::BitVector(numberOfStates, true);
@@ -688,7 +692,7 @@ namespace storm {
             }
 
             // Graphviz Output end
-            dotOutfile << "}" << std::endl;
+            dotOutfile << "}\n";
         }
 
         /*** Private methods ***/
@@ -792,10 +796,11 @@ namespace storm {
         }
 
         std::pair<uint_fast64_t, bool> Order::getNextStateNumber() {
+            assert (statesToHandle.empty());
             while (!statesSorted.empty()) {
                 auto state = statesSorted.back();
                 statesSorted.pop_back();
-                if (!(sufficientForState[state] && contains(state))) {
+                if (!sufficientForState[state] || !contains(state)) {
                     return {state, true};
                 }
             }
@@ -803,21 +808,25 @@ namespace storm {
         }
 
         std::pair<uint_fast64_t, bool> Order::getStateToHandle() {
-            assert (existsStateToHandle());
-            auto state = statesToHandle.back();
-            statesToHandle.pop_back();
-            return {state, false};
+            while (!statesToHandle.empty()) {
+                auto state = statesToHandle.back();
+                statesToHandle.pop_back();
+                if (!sufficientForState[state] || !contains(state)) {
+                    return {state, false};
+                }
+            }
+            return getNextStateNumber();
         }
 
         bool Order::existsStateToHandle() {
-            while (!statesToHandle.empty() && sufficientForState[statesToHandle.back()]) {
+            while (!statesToHandle.empty() && contains(statesToHandle.back()) && sufficientForState[statesToHandle.back()]) {
                 statesToHandle.pop_back();
             }
             return !statesToHandle.empty();
         }
 
         void Order::addStateToHandle(uint_fast64_t state) {
-            if (!sufficientForState[state]) {
+            if (!sufficientForState[state] || !contains(state)) {
                 statesToHandle.push_back(state);
             }
         }

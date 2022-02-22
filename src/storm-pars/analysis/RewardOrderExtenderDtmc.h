@@ -50,6 +50,7 @@ namespace storm {
 
            private:
 
+            bool rewardHack(std::shared_ptr<Order> order, uint_fast64_t currentState,  uint_fast64_t succ0,  uint_fast64_t succ1);
             /*!
              * Inserts a state into an order which has only one successor
              * @param order The considered order
@@ -62,6 +63,8 @@ namespace storm {
             /*** Model Info ***/
             // Reward model of our model
             storm::models::sparse::StandardRewardModel<ValueType> rewardModel;
+            storage::SparseMatrix<ValueType> transposeMatrix;
+
         };
     }
 }
