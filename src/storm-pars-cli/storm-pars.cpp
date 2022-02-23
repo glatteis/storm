@@ -761,10 +761,10 @@ namespace storm {
             }
             std::vector<std::shared_ptr<storm::logic::Formula const>> formulas = storm::api::extractFormulasFromProperties(input.properties);
             storm::utility::Stopwatch monotonicityWatch(true);
-            STORM_LOG_THROW(regions.size() <= 1, storm::exceptions::InvalidArgumentException, "Monotonicity analysis only allowed on single region");
             if (!monSettings.isMonSolutionSet()) {
                 auto monotonicityType = monSettings.getMonotonicityType();
                 if (monotonicityType == modelchecker::MonotonicityType::GRAPH) {
+                    STORM_LOG_THROW(regions.size() <= 1, storm::exceptions::InvalidArgumentException, "Monotonicity analysis only allowed on single region");
                     auto monotonicityHelper = storm::analysis::MonotonicityHelper<ValueType, double>(model, formulas, regions, monSettings.getNumberOfSamples(), storm::settings::getModule<storm::settings::modules::GeneralSettings>().getPrecision(), monSettings.isDotOutputSet());
                     if (monSettings.isExportMonotonicitySet()) {
                         monotonicityHelper.checkMonotonicityInBuild(outfile, monSettings.isOptimisticOrderSet(), monSettings.isUsePLABoundsSet(), monSettings.getDotOutputFilename());

@@ -338,7 +338,7 @@ namespace storm {
             Valuation valuation;
             if (!initialValue) {
                 auto init = getGoodInitialPoint(env, region, dir, regionQueue.top().localMonRes);
-                if (this->isUseMonotonicitySet()) {
+                if (this->isUseMonotonicitySet() && this->getMonotonicityType() == MonotonicityType::GRAPH) {
                     STORM_LOG_INFO("Number of definitely monotone parameters:"
                                    << regionQueue.top().localMonRes->getGlobalMonotonicityResult()->getNumberOfMonotoneParameters());
                     STORM_PRINT("Number of sufficient states:" << regionQueue.top().order->getNumberOfSufficientStates() << std::endl);
@@ -428,7 +428,7 @@ namespace storm {
                                     STORM_LOG_INFO("Order and monotonicity result got extended");
                                 }
                             } else if (useDerivativeMonotonicity) {
-                                std::cout << "Computing derivative monotonicity for" << currRegion << std::endl;
+                                std::cout << "Computing derivative monotonicity for " << currRegion << std::endl;
                                 numberOfPLACallsBounds++;
                                 std::vector<ConstantType> minBound;
                                 std::vector<ConstantType> maxBound;
@@ -481,7 +481,7 @@ namespace storm {
                                     boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
                                     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
                                 }
-                                // std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
+                                std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
                                 this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                             }
 
@@ -514,7 +514,7 @@ namespace storm {
                                     boundsWatch.stop();
                                 }
                                 // Now split the region
-                                if ((useGraphMonotonicity || useDerivativeMonotonicity) && !order->isOptimistic()) {
+                                if ((useGraphMonotonicity && !order->isOptimistic()) || useDerivativeMonotonicity) {
                                     this->splitSmart(currRegion, newRegions,
                                                      *(localMonotonicityResult->getGlobalMonotonicityResult()), true);
                                 } else if (this->isRegionSplitEstimateSupported()) {
