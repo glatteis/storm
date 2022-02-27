@@ -428,7 +428,7 @@ namespace storm {
                                     STORM_LOG_INFO("Order and monotonicity result got extended");
                                 }
                             } else if (useDerivativeMonotonicity) {
-                                std::cout << "Computing derivative monotonicity for " << currRegion << std::endl;
+                                // std::cout << "Computing derivative monotonicity for " << currRegion << std::endl;
                                 numberOfPLACallsBounds++;
                                 std::vector<ConstantType> minBound;
                                 std::vector<ConstantType> maxBound;
@@ -481,7 +481,7 @@ namespace storm {
                                     boundFinder->updateMonotonicityResult(derivativeResultsMin, derivativeResultsMax, localMonotonicityResult, parameter, *this->parametricModel->getInitialStates().begin());
                                     STORM_LOG_INFO("Derivative monotonicity result computed for " << parameter);
                                 }
-                                std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
+                                // std::cout << localMonotonicityResult->getGlobalMonotonicityResult()->toString() << std::endl;
                                 this->specify(env, oldModel, oldCheckTask, oldSplitEstimates, false);
                             }
 
