@@ -313,8 +313,6 @@ namespace storm {
                     if (mpi.applyBisimulation) {
                         result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
                     }
-                    
-                    std::cout << "states after bisim: " << result.model->getNumberOfStates() << std::endl;
 
                     derivative::EqualParameterReducer reducer;
                     auto formulas = storm::api::extractFormulasFromProperties(input.properties);
@@ -336,15 +334,16 @@ namespace storm {
                 result.changed = true;
             }
 
+            if (mpi.applyBisimulation) {
+                result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
+                result.changed = true;
+            }
+
             if (result.model->isOfType(storm::models::ModelType::MarkovAutomaton)) {
                 result.model = storm::cli::preprocessSparseMarkovAutomaton(result.model->template as<storm::models::sparse::MarkovAutomaton<ValueType>>());
                 result.changed = true;
             }
 
-            if (mpi.applyBisimulation) {
-                result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
-                result.changed = true;
-            }
 
             if (transformationSettings.isChainEliminationSet() &&
                 model->isOfType(storm::models::ModelType::MarkovAutomaton)) {

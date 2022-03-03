@@ -393,16 +393,26 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
 
 template<typename FunctionType, typename ConstantType>
 void DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult(
-    std::vector<ConstantType> derivativeMinValues, std::vector<ConstantType> derivativeMaxValues,
+    boost::optional<std::vector<ConstantType>> derivativeMinValues, boost::optional<std::vector<ConstantType>> derivativeMaxValues,
     std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
     VariableType<FunctionType> const& parameter, uint_fast64_t initialState) {
-    // std::cout << derivativeMinValues[initialState] << " <= d" << parameter << " <= " << derivativeMaxValues[initialState] << std::endl;
+    
+    
+    if (derivativeMinValues) {
+        std::cout << derivativeMinValues->at(initialState) << " <= ";
+    }
+    std::cout << "d" << parameter;
+    if (derivativeMaxValues) {
+        std::cout << " <= " << derivativeMaxValues->at(initialState);
+    }
+    std::cout << std::endl;
+
     boost::optional<typename analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity> finalResult;
-    if (derivativeMaxValues[initialState] < 0) {
+    if (derivativeMaxValues && derivativeMaxValues->at(initialState) < 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Decr;
-    } else if (derivativeMinValues[initialState] > 0) {
+    } else if (derivativeMinValues && derivativeMinValues->at(initialState) > 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Incr;
-    } else if (derivativeMaxValues[initialState] == 0 && derivativeMinValues[initialState] == 0) {
+    } else if (derivativeMaxValues && derivativeMinValues && derivativeMaxValues->at(initialState) == 0 && derivativeMinValues->at(initialState) == 0) {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Constant;
     } else {
         finalResult = analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Unknown;

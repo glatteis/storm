@@ -6,7 +6,9 @@
 #include "environment/solver/NativeSolverEnvironment.h"
 #include "environment/solver/SolverEnvironment.h"
 #include "environment/solver/TopologicalSolverEnvironment.h"
+#include "logic/Formula.h"
 #include "modelchecker/results/CheckResult.h"
+#include "modelchecker/results/ExplicitQualitativeCheckResult.h"
 #include "settings/SettingsManager.h"
 #include "settings/modules/CoreSettings.h"
 #include "settings/modules/GeneralSettings.h"
@@ -14,6 +16,7 @@
 #include "solver/SolverSelectionOptions.h"
 #include "solver/helper/SoundValueIterationHelper.h"
 #include "solver/multiplier/GmmxxMultiplier.h"
+#include "storage/BitVector.h"
 #include "storm-pars/modelchecker/instantiation/SparseDtmcInstantiationModelChecker.h"
 #include "storm/exceptions/WrongFormatException.h"
 #include "storm/modelchecker/results/ExplicitQuantitativeCheckResult.h"
@@ -129,18 +132,54 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
 
     std::map<VariableType<FunctionType>, storage::SparseMatrix<FunctionType>> equationSystems;
     // Get initial and target states
-    storage::BitVector target = model.getStates("target");
+    storm::modelchecker::SparsePropositionalModelChecker<models::sparse::Dtmc<FunctionType>> propositionalChecker(model);
+    storage::BitVector target;
+    storage::BitVector avoid(model.getNumberOfStates());
+    if (this->currentFormula->isRewardOperatorFormula()) {
+        auto subformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula());
+        target = propositionalChecker.check(subformula)
+                            ->asExplicitQualitativeCheckResult()
+                            .getTruthValuesVector();
+    } else {
+        if (this->currentFormula->asProbabilityOperatorFormula().getSubformula().isUntilFormula()) {
+            auto rightSubformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getRightSubformula());
+            auto leftSubformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula());
+            target = propositionalChecker.check(rightSubformula)
+                                ->asExplicitQualitativeCheckResult()
+                                .getTruthValuesVector();
+            avoid = propositionalChecker.check(leftSubformula)
+                                ->asExplicitQualitativeCheckResult()
+                                .getTruthValuesVector();
+            avoid.complement();
+        } else {
+            auto subformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula());
+            target = propositionalChecker.check(subformula)
+                                ->asExplicitQualitativeCheckResult()
+                                .getTruthValuesVector();
+        }
+    }
     initialState = model.getStates("init").getNextSetIndex(0);
+    
+    std::cout << *this->currentFormula << std::endl;
+    std::cout << target << std::endl;
 
     if (!checkTask.getFormula().isRewardOperatorFormula()) {
         next = target;
         next.complement();
+        
+        avoid.complement();
+        next &= avoid;
+
         storm::storage::BitVector atSomePointTarget =
             storm::utility::graph::performProbGreater0(model.getBackwardTransitions(), storm::storage::BitVector(model.getNumberOfStates(), true), target);
         next &= atSomePointTarget;
     } else {
         next = target;
         next.complement();
+        
+        avoid.complement();
+        next &= avoid;
+        
         storm::storage::BitVector targetProbOne =
             storm::utility::graph::performProb1(model.getBackwardTransitions(), storm::storage::BitVector(model.getNumberOfStates(), true), target);
         next &= targetProbOne;

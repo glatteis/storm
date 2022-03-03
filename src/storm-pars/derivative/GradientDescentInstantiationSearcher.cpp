@@ -332,7 +332,7 @@ ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::s
 
             for (auto const& parameter : miniBatch) {
                 auto checkResult = derivativeEvaluationHelper->check(env, nesterovPredictedPosition, parameter, valueVector);
-                ConstantType delta = checkResult->getValueVector()[0];
+                ConstantType delta = checkResult->getValueVector()[initialState];
                 if (currentCheckTask->getBound().comparisonType == logic::ComparisonType::Less ||
                     currentCheckTask->getBound().comparisonType == logic::ComparisonType::LessEqual) {
                     delta = -delta;

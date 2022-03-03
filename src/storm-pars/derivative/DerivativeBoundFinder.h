@@ -93,7 +93,7 @@ class DerivativeBoundFinder {
 
     void
     updateMonotonicityResult(
-        std::vector<ConstantType> derivativeMinValues, std::vector<ConstantType> derivativeMaxValues,
+        boost::optional<std::vector<ConstantType>> derivativeMinValues, boost::optional<std::vector<ConstantType>> derivativeMaxValues,
         std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
         // std::shared_ptr<storm::analysis::MonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> globalMonotonicityResult,
         typename utility::parametric::VariableType<FunctionType>::type const& parameter,
