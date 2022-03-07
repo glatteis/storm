@@ -209,12 +209,7 @@ ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::d
 template<typename FunctionType, typename ConstantType>
 ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::stochasticGradientDescent(
     Environment const& env, std::map<VariableType<FunctionType>, CoefficientType<FunctionType>>& position) {
-    uint_fast64_t initialState;
-    const storm::storage::BitVector initialVector = model.getInitialStates();
-    for (uint_fast64_t x : initialVector) {
-        initialState = x;
-        break;
-    }
+    uint_fast64_t initialState = derivativeEvaluationHelper->getInitialState();
 
     ConstantType currentValue;
     switch (this->currentCheckTask->getBound().comparisonType) {

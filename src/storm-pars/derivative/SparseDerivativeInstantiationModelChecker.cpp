@@ -38,8 +38,6 @@ template<typename FunctionType, typename ConstantType>
 std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::check(
     Environment const& env, storm::utility::parametric::Valuation<FunctionType> const& valuation, VariableType<FunctionType> const& parameter,
     boost::optional<std::vector<ConstantType>> const& valueVector) {
-    storm::solver::GeneralLinearEquationSolverFactory<ConstantType> factory;
-
     std::vector<ConstantType> reachabilityProbabilities;
     if (!valueVector.is_initialized()) {
         storm::modelchecker::SparseDtmcInstantiationModelChecker<storm::models::sparse::Dtmc<FunctionType>, ConstantType> instantiationModelChecker(model);
@@ -63,16 +61,30 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
     // Instantiate the matrices with the given instantiation
 
     instantiationWatch.start();
+    
+    // std::cout << valuation << std::endl;
 
     // Write results into the placeholders
-    for (auto& functionResult : this->functions) {
+    for (auto& functionResult : this->functionsUnderived) {
+        functionResult.second = storm::utility::convertNumber<ConstantType>(storm::utility::parametric::evaluate(functionResult.first, valuation));
+    }
+    for (auto& functionResult : this->functionsDerived.at(parameter)) {
         functionResult.second = storm::utility::convertNumber<ConstantType>(storm::utility::parametric::evaluate(functionResult.first, valuation));
     }
 
     auto deltaConstrainedMatrixInstantiated = deltaConstrainedMatricesInstantiated->at(parameter);
 
     // Write the instantiated values to the matrices and vectors according to the stored mappings
-    for (auto& entryValuePair : this->matrixMapping) {
+    for (auto& entryValuePair : this->matrixMappingUnderived) {
+        // std::cout << "setting non-derived value for " << parameter << std::endl;
+        // std::cout << *entryValuePair.first << std::endl;
+        // std::cout << *entryValuePair.second << std::endl;
+        entryValuePair.first->setValue(*(entryValuePair.second));
+    }
+    for (auto& entryValuePair : this->matrixMappingsDerived.at(parameter)) {
+        // std::cout << "setting derived value for " << parameter << std::endl;
+        // std::cout << *entryValuePair.first << std::endl;
+        // std::cout << *entryValuePair.second << std::endl;
         entryValuePair.first->setValue(*(entryValuePair.second));
     }
 
@@ -92,13 +104,15 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
     }
 
     // Here's where the real magic happens - the solver call!
-    this->linearEquationSolvers[parameter] = factory.create(env);
+    storm::solver::GeneralLinearEquationSolverFactory<ConstantType> factory;
+    auto solver = factory.create(env);
 
     // Calculate (1-M)^-1 * resultVec
+    // std::cout << constrainedMatrixInstantiated << std::endl;
+    // std::cout << "calling solver" << std::endl;
+    solver->setMatrix(constrainedMatrixInstantiated);
     std::vector<ConstantType> finalResult(resultVec.size());
-    std::cout << constrainedMatrixInstantiated << std::endl;
-    linearEquationSolvers.at(parameter)->setMatrix(constrainedMatrixInstantiated);
-    linearEquationSolvers.at(parameter)->solveEquations(env, finalResult, resultVec);
+    solver->solveEquations(env, finalResult, resultVec);
 
     approximationWatch.stop();
 
@@ -161,9 +175,6 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
         }
     }
     initialState = model.getStates("init").getNextSetIndex(0);
-    
-    std::cout << *this->currentFormula << std::endl;
-    std::cout << target << std::endl;
 
     if (!checkTask.getFormula().isRewardOperatorFormula()) {
         next = target;
@@ -195,6 +206,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
         stateNumToEquationSystemRow[row] = newRow;
         newRow++;
     }
+    initialState = stateNumToEquationSystemRow[initialState];
     storage::SparseMatrix<FunctionType> constrainedMatrix = transitionMatrix.getSubmatrix(false, next, next, true);
     // If necessary, convert the matrix from the fixpoint notation to the form needed for the equation system.
     this->constrainedMatrixEquationSystem = constrainedMatrix;
@@ -212,7 +224,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
         }
     }
     constrainedMatrixInstantiated = instantiatedSystemBuilder.build();
-    initializeInstantiatedMatrix(constrainedMatrixEquationSystem, constrainedMatrixInstantiated);
+    initializeInstantiatedMatrix(constrainedMatrixEquationSystem, constrainedMatrixInstantiated, matrixMappingUnderived, functionsUnderived);
     // The resulting equation systems
     this->deltaConstrainedMatrices = std::make_unique<std::map<VariableType<FunctionType>, storage::SparseMatrix<FunctionType>>>();
     this->deltaConstrainedMatricesInstantiated = std::make_unique<std::map<VariableType<FunctionType>, storage::SparseMatrix<ConstantType>>>();
@@ -242,9 +254,9 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     for (auto const& var : this->parameters) {
         auto builtMatrix = matrixBuilders[var].build();
         auto builtMatrixInstantiated = instantiatedMatrixBuilders[var].build();
-        initializeInstantiatedMatrix(builtMatrix, builtMatrixInstantiated);
-        deltaConstrainedMatrices->emplace(var, builtMatrix);
-        deltaConstrainedMatricesInstantiated->emplace(var, builtMatrixInstantiated);
+        initializeInstantiatedMatrix(builtMatrix, builtMatrixInstantiated, matrixMappingsDerived[var], functionsDerived[var]);
+        deltaConstrainedMatrices->emplace(var, std::move(builtMatrix));
+        deltaConstrainedMatricesInstantiated->emplace(var, std::move(builtMatrixInstantiated));
     }
 
     for (auto const& var : this->parameters) {
@@ -293,7 +305,9 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
 
 template<typename FunctionType, typename ConstantType>
 void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::initializeInstantiatedMatrix(
-    storage::SparseMatrix<FunctionType>& matrix, storage::SparseMatrix<ConstantType>& matrixInstantiated) {
+    storage::SparseMatrix<FunctionType>& matrix, storage::SparseMatrix<ConstantType>& matrixInstantiated,
+    std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>>& matrixMapping,
+    std::unordered_map<FunctionType, ConstantType>& functions) {
     ConstantType dummyValue = storm::utility::one<ConstantType>();
     auto constantEntryIt = matrixInstantiated.begin();
     auto parametricEntryIt = matrix.begin();

@@ -1,6 +1,7 @@
 #ifndef STORM_DERIVATIVEEVALUATIONHELPER_H
 #define STORM_DERIVATIVEEVALUATIONHELPER_H
 
+#include <cstdint>
 #include <map>
 #include "analysis/GraphConditions.h"
 #include "logic/Formula.h"
@@ -45,6 +46,10 @@ class SparseDerivativeInstantiationModelChecker {
         Environment const& env, storm::utility::parametric::Valuation<FunctionType> const& valuation,
         typename utility::parametric::VariableType<FunctionType>::type const& parameter,
         boost::optional<std::vector<ConstantType>> const& valueVector = boost::none);
+    
+    uint64_t getInitialState() {
+        return initialState;
+    }
 
    private:
     models::sparse::Dtmc<FunctionType> model;
@@ -55,8 +60,10 @@ class SparseDerivativeInstantiationModelChecker {
     std::set<typename utility::parametric::VariableType<FunctionType>::type> parameters;
     std::map<typename utility::parametric::VariableType<FunctionType>::type, std::unique_ptr<storm::solver::LinearEquationSolver<ConstantType>>>
         linearEquationSolvers;
-    std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>> matrixMapping;
-    std::unordered_map<FunctionType, ConstantType> functions;
+    std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>> matrixMappingUnderived;
+    std::map<typename utility::parametric::VariableType<FunctionType>::type, std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>>> matrixMappingsDerived;
+    std::unordered_map<FunctionType, ConstantType> functionsUnderived;
+    std::map<typename utility::parametric::VariableType<FunctionType>::type, std::unordered_map<FunctionType, ConstantType>> functionsDerived;
     storage::SparseMatrix<FunctionType> constrainedMatrixEquationSystem;
     storage::SparseMatrix<ConstantType> constrainedMatrixInstantiated;
     std::unique_ptr<std::map<typename utility::parametric::VariableType<FunctionType>::type, storage::SparseMatrix<FunctionType>>> deltaConstrainedMatrices;
@@ -68,7 +75,9 @@ class SparseDerivativeInstantiationModelChecker {
     storage::BitVector next;
     uint_fast64_t initialState;
 
-    void initializeInstantiatedMatrix(storage::SparseMatrix<FunctionType>& matrix, storage::SparseMatrix<ConstantType>& matrixInstantiated);
+    void initializeInstantiatedMatrix(storage::SparseMatrix<FunctionType>& matrix, storage::SparseMatrix<ConstantType>& matrixInstantiated,
+        std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>>& matrixMapping,
+        std::unordered_map<FunctionType, ConstantType>& functions);
     void setup(Environment const& env, modelchecker::CheckTask<storm::logic::Formula, FunctionType> const& checkTask);
 
     utility::Stopwatch instantiationWatch;
