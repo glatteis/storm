@@ -258,8 +258,6 @@ if (STORM_FORCE_POPCNT)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mpopcnt")
 endif()
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
-
 # TODO: remove forcing the old version of optional as soon as the related Spirit bug is fixed:
 # https://svn.boost.org/trac/boost/ticket/12349
 # Fix thanks to: https://github.com/freeorion/freeorion/issues/777
