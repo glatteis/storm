@@ -92,11 +92,13 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
     }
 
     // Here's where the real magic happens - the solver call!
+    this->linearEquationSolvers[parameter] = factory.create(env);
 
     // Calculate (1-M)^-1 * resultVec
     std::vector<ConstantType> finalResult(resultVec.size());
-    linearEquationSolvers[parameter]->setMatrix(constrainedMatrixInstantiated);
-    linearEquationSolvers[parameter]->solveEquations(env, finalResult, resultVec);
+    std::cout << constrainedMatrixInstantiated << std::endl;
+    linearEquationSolvers.at(parameter)->setMatrix(constrainedMatrixInstantiated);
+    linearEquationSolvers.at(parameter)->solveEquations(env, finalResult, resultVec);
 
     approximationWatch.stop();
 
@@ -280,13 +282,13 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
 
     generalSetupWatch.stop();
 
-    for (auto const& param : this->parameters) {
-        this->linearEquationSolvers[param] = factory.create(env);
-        this->linearEquationSolvers[param]->setCachingEnabled(true);
-        std::unique_ptr<solver::TerminationCondition<ConstantType>> terminationCondition =
-            std::make_unique<SignedGradientDescentTerminationCondition<ConstantType>>(initialState);
-        this->linearEquationSolvers[param]->setTerminationCondition(std::move(terminationCondition));
-    }
+    // for (auto const& param : this->parameters) {
+    //     this->linearEquationSolvers[param] = factory.create(env);
+    //     // this->linearEquationSolvers[param]->setCachingEnabled(true);
+    //     // std::unique_ptr<solver::TerminationCondition<ConstantType>> terminationCondition =
+    //     //     std::make_unique<SignedGradientDescentTerminationCondition<ConstantType>>(initialState);
+    //     // this->linearEquationSolvers[param]->setTerminationCondition(std::move(terminationCondition));
+    // }
 }
 
 template<typename FunctionType, typename ConstantType>
