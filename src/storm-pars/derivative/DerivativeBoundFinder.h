@@ -3,7 +3,6 @@
 
 #include <memory>
 #include <queue>
-#include "builder/TerminalStatesGetter.h"
 #include "environment/Environment.h"
 #include "logic/Formula.h"
 #include "modelchecker/CheckTask.h"
