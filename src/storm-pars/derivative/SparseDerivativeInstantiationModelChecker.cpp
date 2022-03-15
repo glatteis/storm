@@ -1,5 +1,4 @@
 #include "SparseDerivativeInstantiationModelChecker.h"
-#include <_types/_uint64_t.h>
 #include <cstdint>
 #include "analysis/GraphConditions.h"
 #include "environment/Environment.h"
