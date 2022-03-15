@@ -1,5 +1,4 @@
 #include "SparseDerivativeInstantiationModelChecker.h"
-#include <cstdint>
 #include "analysis/GraphConditions.h"
 #include "environment/Environment.h"
 #include "environment/solver/GmmxxSolverEnvironment.h"
