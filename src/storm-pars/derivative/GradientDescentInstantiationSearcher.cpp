@@ -2,6 +2,7 @@
 #include <cln/random.h>
 #include <cln/real.h>
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include "analysis/GraphConditions.h"
 #include "environment/Environment.h"
@@ -209,7 +210,7 @@ ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::d
 template<typename FunctionType, typename ConstantType>
 ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::stochasticGradientDescent(
     Environment const& env, std::map<VariableType<FunctionType>, CoefficientType<FunctionType>>& position) {
-    uint_fast64_t initialState = derivativeEvaluationHelper->getInitialState();
+    uint_fast64_t initialStateModel = model.getStates("init").getNextSetIndex(0);
 
     ConstantType currentValue;
     switch (this->currentCheckTask->getBound().comparisonType) {
@@ -316,9 +317,9 @@ ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::s
                 }
                 std::unique_ptr<storm::modelchecker::CheckResult> terminationResult = instantiationModelChecker->check(env, modelCheckPosition);
                 std::vector<ConstantType> terminationValueVector = terminationResult->asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
-                currentValue = terminationValueVector[initialState];
+                currentValue = terminationValueVector[initialStateModel];
             } else {
-                currentValue = valueVector[initialState];
+                currentValue = valueVector[initialStateModel];
             }
 
             if (currentCheckTask->getBound().isSatisfied(currentValue) && stochasticPosition) {
@@ -327,7 +328,7 @@ ConstantType GradientDescentInstantiationSearcher<FunctionType, ConstantType>::s
 
             for (auto const& parameter : miniBatch) {
                 auto checkResult = derivativeEvaluationHelper->check(env, nesterovPredictedPosition, parameter, valueVector);
-                ConstantType delta = checkResult->getValueVector()[initialState];
+                ConstantType delta = checkResult->getValueVector()[derivativeEvaluationHelper->getInitialState()];
                 if (currentCheckTask->getBound().comparisonType == logic::ComparisonType::Less ||
                     currentCheckTask->getBound().comparisonType == logic::ComparisonType::LessEqual) {
                     delta = -delta;
