@@ -135,6 +135,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::minimizeEqualParam
                         }
                         // We only support one backlink per state for now, so if we already found an entry, abort
                         if (entryFound) {
+                            std::cout << "Abort because of two backlinks" << std::endl;
                             entryFound = false;
                             break;
                         }

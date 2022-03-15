@@ -1,4 +1,6 @@
 #include "SparseDerivativeInstantiationModelChecker.h"
+#include <_types/_uint64_t.h>
+#include <cstdint>
 #include "analysis/GraphConditions.h"
 #include "environment/Environment.h"
 #include "environment/solver/GmmxxSolverEnvironment.h"
@@ -23,6 +25,7 @@
 #include "storm/solver/EliminationLinearEquationSolver.h"
 #include "storm/solver/LinearEquationSolver.h"
 #include "storm/utility/vector.h"
+#include "utility/constants.h"
 #include "utility/graph.h"
 #include "utility/logging.h"
 
@@ -57,7 +60,6 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
             interestingReachabilityProbabilities.push_back(reachabilityProbabilities[i]);
         }
     }
-
     // Instantiate the matrices with the given instantiation
 
     instantiationWatch.start();
@@ -76,15 +78,9 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
 
     // Write the instantiated values to the matrices and vectors according to the stored mappings
     for (auto& entryValuePair : this->matrixMappingUnderived) {
-        // std::cout << "setting non-derived value for " << parameter << std::endl;
-        // std::cout << *entryValuePair.first << std::endl;
-        // std::cout << *entryValuePair.second << std::endl;
         entryValuePair.first->setValue(*(entryValuePair.second));
     }
     for (auto& entryValuePair : this->matrixMappingsDerived.at(parameter)) {
-        // std::cout << "setting derived value for " << parameter << std::endl;
-        // std::cout << *entryValuePair.first << std::endl;
-        // std::cout << *entryValuePair.second << std::endl;
         entryValuePair.first->setValue(*(entryValuePair.second));
     }
 
@@ -94,7 +90,7 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
     }
 
     instantiationWatch.stop();
-
+    
     approximationWatch.start();
 
     std::vector<ConstantType> resultVec(interestingReachabilityProbabilities.size());
@@ -174,7 +170,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
                                 .getTruthValuesVector();
         }
     }
-    initialState = model.getStates("init").getNextSetIndex(0);
+    initialStateModel = model.getStates("init").getNextSetIndex(0);
 
     if (!checkTask.getFormula().isRewardOperatorFormula()) {
         next = target;
@@ -206,7 +202,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
         stateNumToEquationSystemRow[row] = newRow;
         newRow++;
     }
-    initialState = stateNumToEquationSystemRow[initialState];
+    initialStateEqSystem = stateNumToEquationSystemRow[initialStateModel];
     storage::SparseMatrix<FunctionType> constrainedMatrix = transitionMatrix.getSubmatrix(false, next, next, true);
     // If necessary, convert the matrix from the fixpoint notation to the form needed for the equation system.
     this->constrainedMatrixEquationSystem = constrainedMatrix;
@@ -262,10 +258,16 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     for (auto const& var : this->parameters) {
         (*derivedOutputVecs)[var] = std::vector<FunctionType>(constrainedMatrix.getRowCount());
     }
+    
+    // storage::BitVector constrainedTarget(next.size());
+    // for (uint_fast64_t i = 0; i < transitionMatrix.getRowCount(); i++) {
+    //     if (!stateNumToEquationSystemRow.count(i)) continue;
+    //     constrainedTarget.set(stateNumToEquationSystemRow[i], target[i]);
+    // }
 
-    for (uint_fast64_t x = 0; x < constrainedMatrix.getRowCount(); ++x) {
-        if (!stateNumToEquationSystemRow.count(x)) continue;
-        uint_fast64_t state = stateNumToEquationSystemRow[x];
+    for (uint_fast64_t state = 0; state < transitionMatrix.getRowCount(); ++state) {
+        if (!stateNumToEquationSystemRow.count(state)) continue;
+        uint_fast64_t row = stateNumToEquationSystemRow[state];
         // PROBABILITY -> For every state, the one-step probability to reach the target goes into the output vector
         // REWARD -> For every state, the reward goes into the output vector
         FunctionType rationalFunction;
@@ -288,7 +290,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
             rationalFunction = stateRewards[state];
         }
         for (auto const& var : rationalFunction.gatherVariables()) {
-            (*derivedOutputVecs)[var][x] = rationalFunction.derivative(var);
+            (*derivedOutputVecs)[var][row] = rationalFunction.derivative(var);
         }
     }
 

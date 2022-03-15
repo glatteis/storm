@@ -55,6 +55,7 @@
 #include "storm/settings/modules/IOSettings.h"
 #include "storm/settings/modules/BisimulationSettings.h"
 #include "storm/settings/modules/TransformationSettings.h"
+#include "utility/constants.h"
 #include "utility/logging.h"
 
 
@@ -682,14 +683,6 @@ namespace storm {
                 }
 
                 derivative::SparseDerivativeInstantiationModelChecker<ValueType, storm::RationalNumber> modelChecker(*dtmc);
-
-                // TODO Make Initial State flexible
-                uint_fast64_t initialState;           
-                const storm::storage::BitVector initialVector = dtmc->getStates("init");
-                for (uint_fast64_t x : initialVector) {
-                    initialState = x;
-                    break;
-                }
                 
                 modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> referenceCheckTask(*formula);
                 std::shared_ptr<storm::logic::Formula> formulaWithoutBound;
@@ -707,11 +700,12 @@ namespace storm {
                     = storm::modelchecker::CheckTask<storm::logic::Formula, ValueType>(*formulaWithoutBound);
                 modelChecker.specifyFormula(Environment(), checkTask);
 
+                uint_fast64_t initialState = modelChecker.getInitialState();
                 for (auto const& parameter : vars) {
                     std::cout << "Derivative w.r.t. " << parameter << ": ";
                     
                     auto result = modelChecker.check(Environment(), instantiation, parameter);
-                    std::cout << *result << '\n';
+                    std::cout << utility::convertNumber<double>(result->getValueVector()[initialState]) << '\n';
                 }
                 return;
             } else if (derSettings.isFeasibleInstantiationSearchSet()) {

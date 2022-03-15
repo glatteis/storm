@@ -48,7 +48,7 @@ class SparseDerivativeInstantiationModelChecker {
         boost::optional<std::vector<ConstantType>> const& valueVector = boost::none);
     
     uint64_t getInitialState() {
-        return initialState;
+        return initialStateEqSystem;
     }
 
    private:
@@ -73,7 +73,8 @@ class SparseDerivativeInstantiationModelChecker {
 
     // next states: states that have a relevant successor
     storage::BitVector next;
-    uint_fast64_t initialState;
+    uint_fast64_t initialStateEqSystem;
+    uint_fast64_t initialStateModel;
 
     void initializeInstantiatedMatrix(storage::SparseMatrix<FunctionType>& matrix, storage::SparseMatrix<ConstantType>& matrixInstantiated,
         std::vector<std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType*>>& matrixMapping,
