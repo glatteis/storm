@@ -318,7 +318,8 @@ namespace storm {
                     derivative::EqualParameterReducer reducer;
                     auto formulas = storm::api::extractFormulasFromProperties(input.properties);
                     modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> checkTask(*formulas[0]);
-                    result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(reducer.minimizeEqualParameters(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask));
+                    result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(
+                        reducer.timeTravel(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask));
 
                     if (result.model.get()->getNumberOfStates() == oldModel.getNumberOfStates()) {
                         std::cout << "Same, breaking" << std::endl;

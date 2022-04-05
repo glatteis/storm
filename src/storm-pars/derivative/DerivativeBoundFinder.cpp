@@ -14,6 +14,7 @@
 #include "modelchecker/propositional/SparsePropositionalModelChecker.h"
 #include "modelchecker/results/CheckResult.h"
 #include "modelchecker/results/ExplicitQualitativeCheckResult.h"
+#include "modelchecker/results/ExplicitQuantitativeCheckResult.h"
 #include "models/sparse/Dtmc.h"
 #include "models/sparse/ItemLabeling.h"
 #include "models/sparse/Model.h"
@@ -31,7 +32,6 @@
 #include "utility/graph.h"
 #include "utility/logging.h"
 #include "utility/macros.h"
-#include "modelchecker/results/ExplicitQuantitativeCheckResult.h"
 
 namespace storm {
 namespace derivative {
@@ -112,7 +112,8 @@ using CoefficientType = typename utility::parametric::CoefficientType<FunctionTy
 //     }
 
 //     /* for (uint_fast64_t i = 0; i < modelCopy.getNumberOfStates(); i++) { */
-//     /*     std::cout << "for " << i << ": " << utility::convertNumber<double>(stateRewardsMin[i]) << "<=" << utility::convertNumber<double>(stateRewardsMax[i])
+//     /*     std::cout << "for " << i << ": " << utility::convertNumber<double>(stateRewardsMin[i]) << "<=" <<
+//     utility::convertNumber<double>(stateRewardsMax[i])
 //      * << std::endl; */
 //     /* } */
 
@@ -129,7 +130,8 @@ using CoefficientType = typename utility::parametric::CoefficientType<FunctionTy
 //         newTarget = target;
 //     } else {
 //         storm::storage::BitVector probZero = storm::utility::graph::performProbGreater0(modelCopy.getBackwardTransitions(),
-//                                                                                         storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
+//                                                                                         storm::storage::BitVector(modelCopy.getNumberOfStates(), true),
+//                                                                                         target);
 //         probZero.complement();
 //         storm::storage::BitVector probOne =
 //             storm::utility::graph::performProb1(modelCopy.getBackwardTransitions(), storm::storage::BitVector(modelCopy.getNumberOfStates(), true), target);
@@ -183,7 +185,6 @@ using CoefficientType = typename utility::parametric::CoefficientType<FunctionTy
 //     return std::make_pair(std::move(resultMax), std::move(resultMin));
 // }
 
-
 template<typename FunctionType, typename ConstantType>
 storm::models::sparse::Dtmc<FunctionType> const DerivativeBoundFinder<FunctionType, ConstantType>::getInternalModel() {
     return model;
@@ -203,12 +204,12 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
 
     const storage::SparseMatrix<FunctionType> transitionMatrix = model.getTransitionMatrix();
     models::sparse::Dtmc<FunctionType> modelCopy = model;
-    
+
     model.reduceToStateBasedRewards();
-    
+
     std::vector<FunctionType> stateRewardsMax(transitionMatrix.getRowCount());
     std::vector<FunctionType> stateRewardsMin(transitionMatrix.getRowCount());
-    
+
     for (uint_fast64_t i = 0; i < model.getNumberOfStates(); i++) {
         if (currentCheckTaskNoBound->getFormula().isRewardOperatorFormula()) {
             if (currentCheckTaskNoBound->isRewardModelSet()) {
@@ -225,7 +226,7 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
             stateRewardsMax[i] = utility::zero<FunctionType>();
             stateRewardsMin[i] = utility::zero<FunctionType>();
         }
-        
+
         ConstantType derivativeMin = 0.0;
         ConstantType derivativeMax = 0.0;
 
@@ -245,18 +246,18 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
                     extremalValueMax = maxValues[toState];
                     extremalValueMin = minValues[toState];
                 }
-                
+
                 derivativeMax += derivative * extremalValueMax;
                 derivativeMin += derivative * extremalValueMin;
             }
         }
-        
+
         if (localMonotonicityResult != nullptr) {
             if (derivativeMax < 0) {
                 localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Decr);
             } else if (derivativeMin > 0) {
                 localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Incr);
-            } else  if (derivativeMin == 0 && derivativeMax == 0) {
+            } else if (derivativeMin == 0 && derivativeMax == 0) {
                 localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Constant);
             } else {
                 localMonotonicityResult->setMonotonicity(i, parameter, analysis::MonotonicityResult<VariableType<FunctionType>>::Monotonicity::Unknown);
@@ -344,7 +345,6 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
      * std::string("derivative-max"), this->formulaOperatorInformation,
      * logic::RewardMeasureType::Expectation)->asRewardOperatorFormula().asSharedPointer(); */
 
-
     std::shared_ptr<storm::logic::Formula> subformula;
     if ((this->currentFormula->isRewardOperatorFormula() && this->currentFormula->asRewardOperatorFormula().getSubformula().isEventuallyFormula()) ||
         (this->currentFormula->isProbabilityOperatorFormula() && this->currentFormula->asProbabilityOperatorFormula().getSubformula().isEventuallyFormula())) {
@@ -358,7 +358,7 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
 
     auto formulaMax = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-max"), this->formulaOperatorInformation);
     auto formulaMin = std::make_shared<storm::logic::RewardOperatorFormula>(subformula, std::string("derivative-min"), this->formulaOperatorInformation);
-    
+
     // std::cout << *formulaMax << std::endl;
     // std::cout << *formulaMin << std::endl;
 
@@ -369,10 +369,10 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
 
     // STORM_LOG_ASSERT(simplifier.simplify(*formulaMin), "Could not simplify derivative model.");
     // auto modelMin = simplifier.getSimplifiedModel();
-    
+
     // modelMax->reduceToStateBasedRewards();
     // modelMin->reduceToStateBasedRewards();
-    
+
     auto modelMax = model;
     auto modelMin = model;
 
@@ -387,7 +387,7 @@ DerivativeBoundFinder<FunctionType, ConstantType>::computeMonotonicityTasks(
 
     // modelMax = storm::api::performDeterministicSparseBisimulationMinimization(modelMax, {formulaMax}, storage::BisimulationType::Strong);
     // modelMin = storm::api::performDeterministicSparseBisimulationMinimization(modelMin, {formulaMin}, storage::BisimulationType::Strong);
-    
+
     return std::make_pair(std::make_pair(modelCopy, modelCopy), std::make_pair(formulaMin, formulaMax));
 }
 
@@ -396,8 +396,6 @@ void DerivativeBoundFinder<FunctionType, ConstantType>::updateMonotonicityResult
     boost::optional<std::vector<ConstantType>> derivativeMinValues, boost::optional<std::vector<ConstantType>> derivativeMaxValues,
     std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename utility::parametric::VariableType<FunctionType>::type>> localMonotonicityResult,
     VariableType<FunctionType> const& parameter, uint_fast64_t initialState) {
-    
-    
     if (derivativeMinValues) {
         std::cout << derivativeMinValues->at(initialState) << " <= ";
     }

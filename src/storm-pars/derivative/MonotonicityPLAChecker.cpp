@@ -88,9 +88,9 @@ void MonotonicityPLAChecker<FunctionType, ConstantType>::performMonotonicityPLA(
         bigUpper[parameter] = utility::convertNumber<CoefficientType<FunctionType>>(0.99);
     }
     storage::ParameterRegion<FunctionType> bigRegion(bigLower, bigUpper);
-    
+
     auto initialState = getInitialState();
-    
+
     const uint_fast64_t maxIterations = 10000;
 
     regionQueue.push(bigRegion);

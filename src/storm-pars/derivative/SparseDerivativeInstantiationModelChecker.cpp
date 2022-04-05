@@ -61,7 +61,7 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
     // Instantiate the matrices with the given instantiation
 
     instantiationWatch.start();
-    
+
     // std::cout << valuation << std::endl;
 
     // Write results into the placeholders
@@ -88,7 +88,7 @@ std::unique_ptr<modelchecker::ExplicitQuantitativeCheckResult<ConstantType>> Spa
     }
 
     instantiationWatch.stop();
-    
+
     approximationWatch.start();
 
     std::vector<ConstantType> resultVec(interestingReachabilityProbabilities.size());
@@ -146,26 +146,22 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     storage::BitVector target;
     storage::BitVector avoid(model.getNumberOfStates());
     if (this->currentFormula->isRewardOperatorFormula()) {
-        auto subformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula());
-        target = propositionalChecker.check(subformula)
-                            ->asExplicitQualitativeCheckResult()
-                            .getTruthValuesVector();
+        auto subformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(
+            this->currentFormula->asRewardOperatorFormula().getSubformula().asEventuallyFormula().getSubformula());
+        target = propositionalChecker.check(subformula)->asExplicitQualitativeCheckResult().getTruthValuesVector();
     } else {
         if (this->currentFormula->asProbabilityOperatorFormula().getSubformula().isUntilFormula()) {
-            auto rightSubformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getRightSubformula());
-            auto leftSubformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula());
-            target = propositionalChecker.check(rightSubformula)
-                                ->asExplicitQualitativeCheckResult()
-                                .getTruthValuesVector();
-            avoid = propositionalChecker.check(leftSubformula)
-                                ->asExplicitQualitativeCheckResult()
-                                .getTruthValuesVector();
+            auto rightSubformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(
+                this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getRightSubformula());
+            auto leftSubformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(
+                this->currentFormula->asProbabilityOperatorFormula().getSubformula().asUntilFormula().getLeftSubformula());
+            target = propositionalChecker.check(rightSubformula)->asExplicitQualitativeCheckResult().getTruthValuesVector();
+            avoid = propositionalChecker.check(leftSubformula)->asExplicitQualitativeCheckResult().getTruthValuesVector();
             avoid.complement();
         } else {
-            auto subformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(this->currentFormula->asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula());
-            target = propositionalChecker.check(subformula)
-                                ->asExplicitQualitativeCheckResult()
-                                .getTruthValuesVector();
+            auto subformula = modelchecker::CheckTask<storm::logic::Formula, FunctionType>(
+                this->currentFormula->asProbabilityOperatorFormula().getSubformula().asEventuallyFormula().getSubformula());
+            target = propositionalChecker.check(subformula)->asExplicitQualitativeCheckResult().getTruthValuesVector();
         }
     }
     initialStateModel = model.getStates("init").getNextSetIndex(0);
@@ -173,7 +169,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     if (!checkTask.getFormula().isRewardOperatorFormula()) {
         next = target;
         next.complement();
-        
+
         avoid.complement();
         next &= avoid;
 
@@ -183,10 +179,10 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     } else {
         next = target;
         next.complement();
-        
+
         avoid.complement();
         next &= avoid;
-        
+
         storm::storage::BitVector targetProbOne =
             storm::utility::graph::performProb1(model.getBackwardTransitions(), storm::storage::BitVector(model.getNumberOfStates(), true), target);
         next &= targetProbOne;
@@ -196,7 +192,8 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     std::map<uint_fast64_t, uint_fast64_t> stateNumToEquationSystemRow;
     uint_fast64_t newRow = 0;
     for (uint_fast64_t row = 0; row < transitionMatrix.getRowCount(); ++row) {
-        if (!next.get(row)) continue;
+        if (!next.get(row))
+            continue;
         stateNumToEquationSystemRow[row] = newRow;
         newRow++;
     }
@@ -256,7 +253,7 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     for (auto const& var : this->parameters) {
         (*derivedOutputVecs)[var] = std::vector<FunctionType>(constrainedMatrix.getRowCount());
     }
-    
+
     // storage::BitVector constrainedTarget(next.size());
     // for (uint_fast64_t i = 0; i < transitionMatrix.getRowCount(); i++) {
     //     if (!stateNumToEquationSystemRow.count(i)) continue;
@@ -264,7 +261,8 @@ void SparseDerivativeInstantiationModelChecker<FunctionType, ConstantType>::spec
     // }
 
     for (uint_fast64_t state = 0; state < transitionMatrix.getRowCount(); ++state) {
-        if (!stateNumToEquationSystemRow.count(state)) continue;
+        if (!stateNumToEquationSystemRow.count(state))
+            continue;
         uint_fast64_t row = stateNumToEquationSystemRow[state];
         // PROBABILITY -> For every state, the one-step probability to reach the target goes into the output vector
         // REWARD -> For every state, the reward goes into the output vector
