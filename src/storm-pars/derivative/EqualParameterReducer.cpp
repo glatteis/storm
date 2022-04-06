@@ -512,7 +512,6 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
         topologicalOrderingStack.push(*rit);
     }
     
-    
     // Initialize counting
     std::map<RationalFunctionVariable, std::map<uint_fast64_t, std::set<uint_fast64_t>>> treeStates;
     std::map<RationalFunctionVariable, std::set<uint_fast64_t>> workingSets;
@@ -536,7 +535,6 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
                                      entry.getValue().nominator().getSingleVariable() == parameter &&
                                      entry.getValue().nominator().factorization().size() == 1,
                                  "Flip minimization only supports simple pMCs.");
-
             STORM_LOG_ERROR_COND(flexibleMatrix.getRow(row).size() == 2,
                                  "Flip minimization only supports transitions with a single parameter.");
             workingSets[parameter].emplace(row);
@@ -552,6 +550,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
     updateTreeStates(treeStates, workingSets, flexibleMatrix, allParameters);
     while (!topologicalOrderingStack.empty()) {
         auto state = topologicalOrderingStack.top();
+        std::cout << state << std::endl;
         topologicalOrderingStack.pop();
         // Check if we can reach more than one var from here (by the original matrix)
         bool moreThanOneVarReachable = false;
@@ -568,8 +567,9 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
             continue;
         }
         jipConvert(state, flexibleMatrix, alreadyVisited, treeStates, allParameters);
-        // models::sparse::Dtmc<RationalFunction> newnewDTMC(flexibleMatrix.createSparseMatrix(), newLabels);
+        models::sparse::Dtmc<RationalFunction> newnewDTMC(flexibleMatrix.createSparseMatrix(), newLabels);
         // newnewDTMC.writeDotToStream(std::cout);
+        // newnewDTMC.getTransitionMatrix().isProbabilistic();
         
         // Now our matrix is in Jip normal form. Now just re-order
         std::map<storm::RationalFunctionVariable, std::set<uint_fast64_t>> parameterBuckets;
@@ -629,8 +629,8 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
         for (uint_fast64_t row = 0; row < flexibleMatrix.getRowCount(); row++) {
             matrixWithAdditionalStates.getRow(row) = flexibleMatrix.getRow(row);
         }
-
-        std::map<RationalFunctionVariable, std::set<uint_fast64_t>> countingWorkingSets;
+        
+        workingSets.clear();
 
         uint_fast64_t newStateIndex = flexibleMatrix.getRowCount();
         matrixWithAdditionalStates.getRow(state).clear();
@@ -647,6 +647,14 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
                 // Issue: multiple transitions can go to a single state, not allowed
                 // Solution: Join them
                 matrixWithAdditionalStates.getRow(newStateIndex) = joinDuplicateTransitions(matrixWithAdditionalStates.getRow(newStateIndex));
+                
+                workingSets[entry.first].emplace(newStateIndex);
+                for (auto const& entry : matrixWithAdditionalStates.getRow(newStateIndex)) {
+                    for (auto const& parameter : allParameters) {
+                        workingSets[parameter].emplace(entry.getColumn());
+                    }
+                }
+                
                 newStateIndex += 1;
             } else {
                 matrixWithAdditionalStates.getRow(newStateIndex).push_back(storage::MatrixEntry<uint_fast64_t, RationalFunction>(newStateIndex + 1, pRationalFunctions.at(entry.first)));
@@ -660,7 +668,7 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
                         }
                     }
                     // If it's still needed, re-count it
-                    workingSets.at(entry.first).emplace(successor);
+                    workingSets[entry.first].emplace(successor);
 
                     matrixWithAdditionalStates.getRow(newStateIndex + 1).push_back(storage::MatrixEntry<uint_fast64_t, RationalFunction>(
                         pTransitions.at(successor), directProbs.at(successor) / cumulativeProbabilities.at(entry.first)
@@ -674,20 +682,36 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
                 matrixWithAdditionalStates.getRow(newStateIndex + 1) = joinDuplicateTransitions(matrixWithAdditionalStates.getRow(newStateIndex + 1));
                 matrixWithAdditionalStates.getRow(newStateIndex + 2) = joinDuplicateTransitions(matrixWithAdditionalStates.getRow(newStateIndex + 2));
 
-                treeStates.at(entry.first)[newStateIndex].emplace(newStateIndex);
-                workingSets.at(entry.first).emplace(newStateIndex);
+                treeStates[entry.first][newStateIndex].emplace(newStateIndex);
+                workingSets[entry.first].emplace(newStateIndex);
+                workingSets[entry.first].emplace(newStateIndex + 1);
+                workingSets[entry.first].emplace(newStateIndex + 2);
+                
+                for (auto const& entry : matrixWithAdditionalStates.getRow(newStateIndex + 1)) {
+                    for (auto const& parameter : allParameters) {
+                        workingSets[parameter].emplace(entry.getColumn());
+                    }
+                }
+                for (auto const& entry : matrixWithAdditionalStates.getRow(newStateIndex + 2)) {
+                    for (auto const& parameter : allParameters) {
+                        workingSets[parameter].emplace(entry.getColumn());
+                    }
+                }
 
                 newStateIndex += 3;
             }
         }
-
-        std::set<RationalFunctionVariable> paramsToUpdate;
         
         for (uint_fast64_t i = flexibleMatrix.getRowCount(); i < newMatrixSize; i++) {
             topologicalOrderingStack.push(i);
+            if (stateRewardVector) {
+                stateRewardVector->push_back(storm::utility::zero<RationalFunction>());
+            }
         }
         
-        updateTreeStates(treeStates, countingWorkingSets, matrixWithAdditionalStates, paramsToUpdate);
+        
+        
+        updateTreeStates(treeStates, workingSets, matrixWithAdditionalStates, allParameters);
         
         
         // Extend labeling to more states (Found no better way to do it)
@@ -702,8 +726,9 @@ models::sparse::Dtmc<RationalFunction> EqualParameterReducer::timeTravel(models:
         }
         newLabels = nextNewLabels;
         flexibleMatrix = matrixWithAdditionalStates;
-        // models::sparse::Dtmc<RationalFunction> newnewnewDTMC(flexibleMatrix.createSparseMatrix(), newLabels);
-        // newnewnewDTMC.writeDotToStream(std::cout);
+        models::sparse::Dtmc<RationalFunction> newnewnewDTMC(flexibleMatrix.createSparseMatrix(), newLabels);
+        newnewnewDTMC.writeDotToStream(std::cout);
+        newnewnewDTMC.getTransitionMatrix().isProbabilistic();
     }
 
     auto newTransitionMatrix = flexibleMatrix.createSparseMatrix();
@@ -761,7 +786,7 @@ void EqualParameterReducer::updateTreeStates(
                         // If the set of tree states at the current position is a subset of the set of
                         // tree states of the parent state, we've reached some loop. Then we can stop.
                         bool isSubset = true;
-                        for (auto const& state : treeStates.at(parameter).at(row)) {
+                        for (auto const& state : treeStates.at(parameter)[row]) {
                             if (!treeStates.at(parameter)[entry.getColumn()].count(state)) {
                                 isSubset = false;
                                 break;
@@ -827,6 +852,7 @@ bool EqualParameterReducer::jipConvert(uint_fast64_t state, storage::FlexibleSpa
               [](const storage::MatrixEntry<uint_fast64_t, RationalFunction>& a, const storage::MatrixEntry<uint_fast64_t, RationalFunction>& b) -> bool {
                   return a.getColumn() > b.getColumn();
               });
+    matrix.getRow(state) = joinDuplicateTransitions(matrix.getRow(state));
     return true;
 }
 

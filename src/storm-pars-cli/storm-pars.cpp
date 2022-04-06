@@ -308,7 +308,7 @@ namespace storm {
             if (regionSettings.isApplyEqualParameterReductionSet()) {
                 result.changed = true;
                 auto oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
-                while (true) {
+                for (uint_fast64_t i = 0; i < 1; i++) {
                     std::cout << "Doing a round of reducing" << std::endl;
 
                     if (mpi.applyBisimulation) {
