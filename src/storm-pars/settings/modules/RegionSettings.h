@@ -110,6 +110,8 @@ namespace storm {
                  * Retrieves whether the full result should be printed
                  */
                 bool isPrintFullResultSet() const;
+				
+				bool isTimeTravellingEnabled() const;
                 
                 bool check() const override;
                 
@@ -128,6 +130,7 @@ namespace storm {
 				const static std::string checkEngineOptionName;
 				const static std::string printNoIllustrationOptionName;
 				const static std::string printFullResultOptionName;
+				const static std::string timeTravellingEnabledName;
             };
             
         } // namespace modules
