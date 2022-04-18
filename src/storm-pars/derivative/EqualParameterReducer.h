@@ -14,7 +14,6 @@ class EqualParameterReducer {
     
    public:
         EqualParameterReducer() {}
-        models::sparse::Dtmc<RationalFunction> minimizeEqualParameters(models::sparse::Dtmc<RationalFunction> model, modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask);
         models::sparse::Dtmc<RationalFunction> timeTravel(models::sparse::Dtmc<RationalFunction> model,
                                                           modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask);
 
@@ -23,12 +22,15 @@ class EqualParameterReducer {
             std::map<RationalFunctionVariable, std::map<uint_fast64_t, std::set<uint_fast64_t>>>& treeStates,
             std::map<RationalFunctionVariable, std::set<uint_fast64_t>>& workingSets,
             storage::FlexibleSparseMatrix<RationalFunction>& flexibleMatrix,
-            const std::set<carl::Variable>& allParameters
+            const std::set<carl::Variable>& allParameters,
+            const boost::optional<std::vector<RationalFunction>>& stateRewardVector
         );
         std::vector<storm::storage::MatrixEntry<uint_fast64_t, RationalFunction>> joinDuplicateTransitions(std::vector<storm::storage::MatrixEntry<uint_fast64_t, RationalFunction>> const& entries);
         bool jipConvert(uint_fast64_t state, storage::FlexibleSparseMatrix<RationalFunction>& matrix, std::map<uint_fast64_t, bool>& alreadyVisited,
                         const std::map<RationalFunctionVariable, std::map<uint_fast64_t, std::set<uint_fast64_t>>>& treeStates,
-                        const std::set<carl::Variable>& allParameters);
+                        const std::set<carl::Variable>& allParameters,
+                        const boost::optional<std::vector<RationalFunction>>& stateRewardVector
+                        );
 };
 
 }  // namespace derivative
