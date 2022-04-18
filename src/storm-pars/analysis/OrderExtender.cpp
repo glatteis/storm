@@ -6,11 +6,9 @@
 #include "storm/storage/BitVector.h"
 #include "storm/storage/SparseMatrix.h"
 #include "storm/utility/macros.h"
-#include "storm/utility/graph.h"
 
 #include "storm-pars/api/region.h"
 #include "storm-pars/api/export.h"
-#include "storm-pars/analysis/MonotonicityHelper.h"
 #include "storm/storage/StronglyConnectedComponentDecomposition.h"
 #include "storm/api/verification.h"
 #include "storm/modelchecker/results/ExplicitQuantitativeCheckResult.h"
@@ -95,18 +93,16 @@ namespace storm {
 
         template<typename ValueType, typename ConstantType>
         bool OrderExtender<ValueType, ConstantType>::extendWithAssumption(std::shared_ptr<Order> order, storm::storage::ParameterRegion<ValueType> region, uint_fast64_t stateSucc1, uint_fast64_t stateSucc2) {
-//            if (useAssumptions) {
-                bool usePLANow = this->usePLA.find(order) != this->usePLA.end() && this->usePLA[order];
-                assert(order->compare(stateSucc1, stateSucc2) == Order::UNKNOWN);
-                auto assumptions = usePLANow ? this->assumptionMaker->createAndCheckAssumptions(stateSucc1, stateSucc2, order, region, this->minValues[order],
-                                                                                                this->maxValues[order])
-                                             : this->assumptionMaker->createAndCheckAssumptions(stateSucc1, stateSucc2, order, region);
-                if (assumptions.size() == 1 && assumptions.begin()->second == AssumptionStatus::VALID) {
-                    this->handleAssumption(order, assumptions.begin()->first);
-                    // Assumptions worked, we continue
-                    return true;
-                }
-//            }
+            bool usePLANow = this->usePLA.find(order) != this->usePLA.end() && this->usePLA[order];
+            assert(order->compare(stateSucc1, stateSucc2) == Order::UNKNOWN);
+            auto assumptions = usePLANow ? this->assumptionMaker->createAndCheckAssumptions(stateSucc1, stateSucc2, order, region, this->minValues[order],
+                                                                                            this->maxValues[order])
+                                         : this->assumptionMaker->createAndCheckAssumptions(stateSucc1, stateSucc2, order, region);
+            if (assumptions.size() == 1 && assumptions.begin()->second == AssumptionStatus::VALID) {
+                this->handleAssumption(order, assumptions.begin()->first);
+                // Assumptions worked, we continue
+                return true;
+            }
             return false;
         }
 
@@ -114,16 +110,16 @@ namespace storm {
         std::pair<uint_fast64_t, uint_fast64_t> OrderExtender<ValueType, ConstantType>::extendNormal(std::shared_ptr<Order> order, storm::storage::ParameterRegion<ValueType> region, uint_fast64_t currentState)  {
             // when it is cyclic and the current state is part of an SCC we do forwardreasoning
             if (this->cyclic && !order->isTrivial(currentState) && !order->contains(currentState)) {
-                auto& successors = this->getSuccessors(currentState);
+                std::vector<uint_fast64_t> const& successors = this->getSuccessors(currentState, order).second;
                 if (successors.size() == 2 && (successors[0] == currentState || successors[1] == currentState)) {
                     order->add(currentState);
                 }
             }
-            if (this->cyclic && !order->isTrivial(currentState) && order->contains(currentState)) {
+            if (this->cyclic && !order->isSufficientForState(currentState) && !order->isTrivial(currentState) && order->contains(currentState)) {
                 // Try to extend the order for this scc
                 return extendByForwardReasoning(order, region, currentState);
             } else {
-                assert (order->isTrivial(currentState) || !order->contains(currentState));
+                assert (order->isTrivial(currentState) || !order->contains(currentState) || order->isSufficientForState(currentState));
                 // Do backward reasoning, all successor states must be in the order
                 return  extendByBackwardReasoning(order, region, currentState);
             }
@@ -236,6 +232,13 @@ namespace storm {
         template <typename ValueType, typename ConstantType>
         Order::NodeComparison OrderExtender<ValueType, ConstantType>::addStatesBasedOnMinMax(std::shared_ptr<Order> order, uint_fast64_t state1, uint_fast64_t state2) const {
             if (order->compareFast(state1, state2) != Order::UNKNOWN) {
+                if (!order->contains(state1)) {
+                    order->add(state1);
+                }
+                if (!order->contains(state2)) {
+                    order->add(state2);
+                }
+                assert (order->compareFast(state1, state2) != Order::UNKNOWN);
                 return order->compareFast(state1, state2);
             }
             STORM_LOG_ASSERT (minValues.find(order) != minValues.end() && maxValues.find(order) != maxValues.end(), "Cannot add states based on min max values if the minmax values are not initialized for this order");
@@ -347,9 +350,44 @@ namespace storm {
 
         template <typename ValueType, typename ConstantType>
         void OrderExtender<ValueType, ConstantType>::initializeMinMaxValues(storage::ParameterRegion<ValueType> region,  std::shared_ptr<Order> order) {
-            if (model != nullptr) {
+            if (model != nullptr && model->isOfType(storm::models::ModelType::Dtmc)) {
                 // Use parameter lifting modelchecker to get initial min/max values for order creation
                 modelchecker::SparseDtmcParameterLiftingModelChecker<models::sparse::Dtmc<ValueType>, ConstantType> plaModelChecker;
+                std::unique_ptr<modelchecker::CheckResult> checkResult;
+                auto env = Environment();
+                boost::optional<modelchecker::CheckTask<logic::Formula, ValueType>> checkTask;
+                if (this->formula->hasQuantitativeResult()) {
+                    checkTask  = storm::api::createTask<ValueType>(formula, false);
+                } else {
+                    storm::logic::OperatorInformation opInfo(boost::none, boost::none);
+                    if (formula->isProbabilityOperatorFormula()) {
+                        auto newFormula = std::make_shared<storm::logic::ProbabilityOperatorFormula>(
+                            formula->asProbabilityOperatorFormula().getSubformula().asSharedPointer(), opInfo);
+                        checkTask = modelchecker::CheckTask<logic::Formula, ValueType>(*newFormula);
+                    } else {
+                        STORM_LOG_ASSERT(formula->isRewardOperatorFormula(), "Expecting formula to be reward formula");
+                        auto newFormula = std::make_shared<storm::logic::RewardOperatorFormula>(
+                            formula->asRewardOperatorFormula().getSubformula().asSharedPointer(), model->getUniqueRewardModelName(), opInfo);
+                        checkTask = modelchecker::CheckTask<logic::Formula, ValueType>(*newFormula);
+                    }
+                }
+                STORM_LOG_THROW(plaModelChecker.canHandle(model, checkTask.get()), exceptions::NotSupportedException, "Cannot handle this formula");
+                plaModelChecker.specify(env, model, checkTask.get(), false, false);
+
+                modelchecker::ExplicitQuantitativeCheckResult<ConstantType> minCheck = plaModelChecker.check(env, region, solver::OptimizationDirection::Minimize)->template asExplicitQuantitativeCheckResult<ConstantType>();
+                modelchecker::ExplicitQuantitativeCheckResult<ConstantType> maxCheck = plaModelChecker.check(env, region, solver::OptimizationDirection::Maximize)->template asExplicitQuantitativeCheckResult<ConstantType>();
+
+                if (order != nullptr) {
+                    minValues[order] = minCheck.getValueVector();
+                    maxValues[order] = maxCheck.getValueVector();
+                    usePLA[order] = true;
+                } else {
+                    minValuesInit = minCheck.getValueVector();
+                    maxValuesInit = maxCheck.getValueVector();
+                }
+            } else if (model != nullptr && model->isOfType(storm::models::ModelType::Mdp)) {
+                // Use parameter lifting modelchecker to get initial min/max values for order creation
+                modelchecker::SparseMdpParameterLiftingModelChecker<models::sparse::Mdp<ValueType>, ConstantType> plaModelChecker;
                 std::unique_ptr<modelchecker::CheckResult> checkResult;
                 auto env = Environment();
                 boost::optional<modelchecker::CheckTask<logic::Formula, ValueType>> checkTask;
@@ -404,7 +442,10 @@ namespace storm {
                 if (minValues && maxValues && unknownStatesMap.find(order) != unknownStatesMap.end()) {
                     auto& unknownStates = unknownStatesMap[order];
                     if (unknownStates.first != numberOfStates) {
-                        continueExtending[order] = minValues.get()[unknownStates.first] >= maxValues.get()[unknownStates.second] ||  minValues.get()[unknownStates.second] >= maxValues.get()[unknownStates.first];
+                        // only continue if the difference is large enough to be correct
+                        continueExtending[order] =
+                            (minValues.get()[unknownStates.first] > maxValues.get()[unknownStates.second] && (minValues.get()[unknownStates.first] - maxValues.get()[unknownStates.second]) > 0.000001)
+                            ||  (minValues.get()[unknownStates.second] > maxValues.get()[unknownStates.first] && ((minValues.get()[unknownStates.second] - maxValues.get()[unknownStates.first]) > 0.000001));
                     } else {
                         continueExtending[order] = true;
                     }
@@ -449,6 +490,7 @@ namespace storm {
         std::pair<uint_fast64_t, bool> OrderExtender<ValueType, ConstantType>::getNextState(std::shared_ptr<Order> order, uint_fast64_t currentState, bool done) {
             if (done && currentState != numberOfStates) {
                 order->setSufficientForState(currentState);
+                order->setDoneForState(currentState);
             }
             if (order->existsStateToHandle()) {
                 return order->getStateToHandle();
@@ -463,8 +505,11 @@ namespace storm {
         }
 
         template<typename ValueType, typename ConstantType>
-        bool OrderExtender<ValueType, ConstantType>::isHope(std::shared_ptr<Order> order) {
-            return continueExtending.find(order) != continueExtending.end() && continueExtending[order];
+        bool OrderExtender<ValueType, ConstantType>::isHope(std::shared_ptr<Order> order) const {
+            if (order->getDoneBuilding()) {
+                return false;
+            }
+            return continueExtending.find(order) != continueExtending.end() && continueExtending.at(order);
         }
 
         template<typename ValueType, typename ConstantType>
@@ -478,10 +523,29 @@ namespace storm {
         }
 
         template<typename ValueType, typename ConstantType>
-        std::vector<uint_fast64_t> const& OrderExtender<ValueType, ConstantType>::getSuccessors(uint_fast64_t state, uint_fast64_t choiceNumber) {
-            STORM_LOG_ASSERT(stateMap.size() > state && stateMap[state].size() > choiceNumber, "Cannot get successors for state " << state<< " at choice " << choiceNumber << ". Index out of bounds.");
-            return stateMap[state][choiceNumber];
+        std::pair<bool, std::vector<uint_fast64_t>&> OrderExtender<ValueType, ConstantType>::getSuccessors(uint_fast64_t state, std::shared_ptr<Order> order) {
+            bool res = true;
+            if (this->stateMap[state].size() == 1) {
+                assert (stateMap[state][0].size() > 0);
+                return {res, stateMap[state][0]};
+            }
+            if (order->isActionSetAtState(state)) {
+                assert (stateMap[state][order->getActionAtState(state)].size() > 0);
+                return {res, stateMap[state][order->getActionAtState(state)]};
+            }
+            std::vector<uint_fast64_t> successors;
+            for (auto& succs : this->stateMap[state]) {
+                res &= succs.size() > 1;
+                for (auto succ : succs) {
+                    if (std::find(successors.begin(), successors.end(), succ) == successors.end()) {
+                        successors.push_back(succ);
+                    }
+                }
+            }
+            assert (successors.size() > 0);
+            return {res, successors};
         }
+
         template<typename ValueType, typename ConstantType>
         std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::vector<uint_fast64_t>> OrderExtender<ValueType, ConstantType>::sortForFowardReasoning(
             uint_fast64_t currentState, std::shared_ptr<Order> order) {
@@ -494,7 +558,7 @@ namespace storm {
             bool unknown = false;
             uint_fast64_t s1 = this->numberOfStates;
             uint_fast64_t s2 = this->numberOfStates;
-            auto const& successors = this->getSuccessors(currentState);
+            std::vector<uint_fast64_t> const& successors = this->getSuccessors(currentState, order).second;
             for (auto& state : successors) {
                 unknown = false;
                 bool added = false;
@@ -545,6 +609,47 @@ namespace storm {
             STORM_LOG_ASSERT(s1!=s2 || s1 != this->numberOfStates || (statesSorted.size() == successors.size() + 1), "Expecting all states to be sorted, or s1 to at least contain a valid state number");
             return {{s1, s2}, std::move(statesSorted)};
         }
+
+        template<typename ValueType, typename ConstantType>
+        void OrderExtender<ValueType, ConstantType>::addStatesMinMax(std::shared_ptr<Order> order) {
+            auto transposeMatrix = this->matrix.transpose();
+            auto &min = this->minValues[order];
+            auto &max = this->maxValues[order];
+
+            // Add the states that can be ordered based on min/max values
+            assert (this->usePLA[order]);
+            std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType> vars;
+            for (auto& entry : this->matrix) {
+                for (auto& var : entry.getValue().gatherVariables()) {
+                    vars.insert(var);
+                }
+            }
+            auto& states = order->getStatesSorted();
+            auto fakeRegion = storm::api::createRegion<ValueType>("0", vars);
+            for (uint_fast64_t i = 0; i < this->numberOfStates; i++) {
+                auto state = states[this->numberOfStates - i - 1];
+                findBestAction(order, fakeRegion, state);
+                auto& successors = this->getSuccessors(state, order).second;
+                bool allSorted = true;
+                for (uint_fast64_t i1 = 0; i1 <successors.size(); ++i1) {
+                    for (uint_fast64_t i2 = i1 + 1; i2 < successors.size(); ++i2) {
+                        auto succ1 = successors[i1];
+                        auto succ2 = successors[i2];
+                        allSorted &= this->addStatesBasedOnMinMax(order, succ1, succ2) != Order::NodeComparison::UNKNOWN;
+                    }
+                }
+                if (allSorted && successors.size() > 1 || (successors.size() == 1 && state != *(successors.begin()))) {
+                    STORM_LOG_INFO("All successors of state " << state << " sorted based on min max values");
+                    order->setSufficientForState(state);
+                    for (auto& entry : transposeMatrix.getRow(state)) {
+                        if (!order->isSufficientForState(entry.getColumn())) {
+                            order->addStateToHandle(entry.getColumn());
+                        }
+                    }
+                }
+            }
+        }
+
 
         template class OrderExtender<RationalFunction, double>;
         template class OrderExtender<RationalFunction, RationalNumber>;

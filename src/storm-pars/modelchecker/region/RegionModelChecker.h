@@ -98,12 +98,14 @@ namespace storm {
             bool isUseBoundsSet() const;
             bool isOnlyGlobalSet() const;
             bool isUseOptimisticOrderSet() const;
+            bool isDisableOptimizationSet() const;
 
             void setUseMonotonicity(bool monotonicity = true);
             void setUseBounds(bool bounds = true);
             void setUseOnlyGlobal(bool global = true);
             void setMonotonicityType(MonotonicityType type = MonotonicityType::LIFTING);
             void setUseOptimisticOrder(bool optimistic = true);
+            void setDisableOptimization(bool disableOptimization = true);
 
             void setMonotoneParameters(std::pair<std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>> monotoneParameters);
 
@@ -113,6 +115,7 @@ namespace storm {
             bool useBounds = false;
             MonotonicityType monotonicityType = MonotonicityType::GRAPH;
             bool useOptimisticOrder = false;
+            bool disableOptimization = false;
 
            protected:
             uint_fast64_t numberOfRegionsKnownThroughMonotonicity;
@@ -121,7 +124,7 @@ namespace storm {
 
             virtual void extendLocalMonotonicityResult(storm::storage::ParameterRegion<ParametricType> const& region, std::shared_ptr<storm::analysis::Order> order, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonotonicityResult);
 
-            virtual void splitSmart(storm::storage::ParameterRegion<ParametricType> &region, std::vector<storm::storage::ParameterRegion<ParametricType>> &regionVector, storm::analysis::MonotonicityResult<VariableType> &monRes, bool splitForExtremum) const;
+            virtual void splitSmart(storm::storage::ParameterRegion<ParametricType> &region, std::vector<storm::storage::ParameterRegion<ParametricType>> &regionVector, storm::analysis::MonotonicityResult<VariableType> &monRes, bool minimize) const;
 
         };
 

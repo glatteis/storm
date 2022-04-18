@@ -223,7 +223,6 @@ namespace storm {
                         }
                     } else {
                         selectedStates.set(state, false);
-                        break;
                     }
                 }
                 // invoke elimination and obtain resulting transition matrix
@@ -231,8 +230,14 @@ namespace storm {
                 storm::storage::FlexibleSparseMatrix<typename SparseModelType::ValueType> flexibleBackwardTransitions(sparseMatrix.transpose(), true);
                 storm::solver::stateelimination::NondeterministicModelStateEliminator<typename SparseModelType::ValueType> stateEliminator(
                     flexibleMatrix, flexibleBackwardTransitions, actionRewards);
+
                 for (auto state : selectedStates) {
-                    stateEliminator.eliminateState(state, true);
+//                    if (sparseMatrix.getRowGroupSize(state) == 1) {
+                        stateEliminator.eliminateState(state, true);
+//                    } else {
+//                        selectedStates.set(state, false);
+//                        STORM_LOG_WARN("Elimination of state " << state << " not possible, > 1 action is enabled for this state.");
+//                    }
                 }
                 selectedStates.complement();
                 auto keptRows = sparseMatrix.getRowFilter(selectedStates);

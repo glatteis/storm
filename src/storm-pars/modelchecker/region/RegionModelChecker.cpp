@@ -407,6 +407,11 @@ namespace storm {
         }
 
         template <typename ParametricType>
+        bool RegionModelChecker<ParametricType>::isDisableOptimizationSet() const {
+            return disableOptimization;
+        }
+
+        template <typename ParametricType>
         void RegionModelChecker<ParametricType>::setUseMonotonicity(bool monotonicity) {
             this->useMonotonicity = monotonicity;
         }
@@ -435,11 +440,15 @@ namespace storm {
         }
 
         template <typename ParametricType>
+        void RegionModelChecker<ParametricType>::setDisableOptimization(bool disableOptimization){
+            this->disableOptimization = disableOptimization;
+        }
+
+        template <typename ParametricType>
         void
         RegionModelChecker<ParametricType>::splitSmart(storm::storage::ParameterRegion<ParametricType> &currentRegion,
                                                        std::vector<storm::storage::ParameterRegion<ParametricType>> &regionVector,
-                                                       storm::analysis::MonotonicityResult<VariableType> &monRes,
-                                                       bool splitForExtremum) const {
+                                                       storm::analysis::MonotonicityResult<VariableType> &monRes, bool minimize) const {
             STORM_LOG_WARN("Smart splitting for this model checker not implemented");
             currentRegion.split(currentRegion.getCenterPoint(), regionVector);
         }

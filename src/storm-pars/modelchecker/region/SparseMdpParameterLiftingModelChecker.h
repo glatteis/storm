@@ -20,6 +20,10 @@ namespace storm {
         template <typename SparseModelType, typename ConstantType>
         class SparseMdpParameterLiftingModelChecker : public SparseParameterLiftingModelChecker<SparseModelType, ConstantType> {
         public:
+            typedef typename SparseModelType::ValueType ValueType;
+            typedef typename RegionModelChecker<ValueType>::VariableType VariableType;
+            typedef typename storm::analysis::MonotonicityResult<VariableType>::Monotonicity Monotonicity;
+
             SparseMdpParameterLiftingModelChecker();
             SparseMdpParameterLiftingModelChecker(std::unique_ptr<storm::solver::GameSolverFactory<ConstantType>>&& solverFactory);
             virtual ~SparseMdpParameterLiftingModelChecker() = default;
@@ -34,7 +38,8 @@ namespace storm {
             boost::optional<storm::storage::Scheduler<ConstantType>> getCurrentMinScheduler();
             boost::optional<storm::storage::Scheduler<ConstantType>> getCurrentMaxScheduler();
             boost::optional<storm::storage::Scheduler<ConstantType>> getCurrentPlayer1Scheduler();
-                
+            void extendLocalMonotonicityResult(storm::storage::ParameterRegion<ValueType> const& region, std::shared_ptr<storm::analysis::Order> order, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonotonicityResult) override;
+
         protected:
                 
             virtual void specifyBoundedUntilFormula(const CheckTask <storm::logic::BoundedUntilFormula, ConstantType> &checkTask) override;
@@ -47,9 +52,10 @@ namespace storm {
             virtual std::unique_ptr<CheckResult> computeQuantitativeValues(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters, std::shared_ptr<storm::analysis::LocalMonotonicityResult<typename RegionModelChecker<typename SparseModelType::ValueType>::VariableType>> localMonotonicityResult = nullptr) override;
                 
             virtual void reset() override;
-                
+            virtual void splitSmart(storm::storage::ParameterRegion<ValueType> &region, std::vector<storm::storage::ParameterRegion<ValueType>> &regionVector, storm::analysis::MonotonicityResult<VariableType> &monRes, bool minimize) const override;
 
-        private:
+
+           private:
             void computePlayer1Matrix(boost::optional<storm::storage::BitVector> const& selectedRows = boost::none);
             
             storm::storage::BitVector maybeStates;

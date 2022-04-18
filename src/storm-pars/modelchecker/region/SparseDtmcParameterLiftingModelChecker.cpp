@@ -56,7 +56,7 @@ namespace storm {
         template <typename SparseModelType, typename ConstantType>
         void SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::specify(Environment const& env, std::shared_ptr<storm::models::ModelBase> parametricModel, CheckTask<storm::logic::Formula, ValueType> const& checkTask, bool generateRegionSplitEstimates, bool allowModelSimplification) {
             auto dtmc = parametricModel->template as<SparseModelType>();
-            monotonicityChecker = std::make_unique<storm::analysis::MonotonicityChecker<ValueType>>(dtmc->getTransitionMatrix());
+            this->monotonicityChecker = std::make_unique<storm::analysis::MonotonicityChecker<ValueType>>(dtmc->getTransitionMatrix());
             specify_internal(env, dtmc, checkTask, generateRegionSplitEstimates, !allowModelSimplification);
             if (checkTask.isBoundSet()) {
                 thresholdTask = storm::utility::convertNumber<ConstantType>(checkTask.getBoundThreshold());
@@ -127,11 +127,10 @@ namespace storm {
             // No requirements for bounded formulas
             solverFactory->setRequirementsChecked(true);
 
-            if (RegionModelChecker<ValueType>::isUseMonotonicitySet()) {
+            if (this->isUseMonotonicitySet()) {
                 // For monotonicity checking
                 std::pair<storm::storage::BitVector, storm::storage::BitVector> statesWithProbability01 =
                     storm::utility::graph::performProb01(this->parametricModel->getBackwardTransitions(), phiStates, psiStates);
-                // TODO change to this, results in an "undefined reference" error atm
                 this->orderExtender = std::make_shared<storm::analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>>(
                     statesWithProbability01.second, statesWithProbability01.first, this->parametricModel->getTransitionMatrix());
             }
@@ -402,7 +401,7 @@ namespace storm {
                     maxSchedChoices = solver->getSchedulerChoices();
                 }
                 if (isRegionSplitEstimateSupported()) {
-                    computeRegionSplitEstimates(x, solver->getSchedulerChoices(), region, dirForParameters);
+                    computeRegionSplitEstimates(x, solver->getSchedulerChoices(), region, dirForParameters, localMonotonicityResult == nullptr ? nullptr : localMonotonicityResult->getGlobalMonotonicityResult());
                 }
             }
 
@@ -418,7 +417,7 @@ namespace storm {
         }
 
         template <typename SparseModelType, typename ConstantType>
-        void SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::computeRegionSplitEstimates(std::vector<ConstantType> const& quantitativeResult, std::vector<uint_fast64_t> const& schedulerChoices, storm::storage::ParameterRegion<ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters) {
+        void SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::computeRegionSplitEstimates(std::vector<ConstantType> const& quantitativeResult, std::vector<uint_fast64_t> const& schedulerChoices, storm::storage::ParameterRegion<ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters, std::shared_ptr<analysis::MonotonicityResult<VariableType>> monRes) {
             std::map<VariableType, double> deltaLower, deltaUpper;
             for (auto const& p : region.getVariables()) {
                 deltaLower.insert(std::make_pair(p, 0.0));
@@ -443,28 +442,32 @@ namespace storm {
                 do {
                     auto const& consideredParameters = checkUpperParameters ? optimalChoiceVal.getUpperParameters() : optimalChoiceVal.getLowerParameters();
                     for (auto const& p : consideredParameters) {
-                        // Find the 'best' choice that assigns the parameter to the other bound
-                        ConstantType bestValue = 0;
-                        bool foundBestValue = false;
-                        for (uint64_t choice = 0; choice < stateResults.size(); ++choice) {
-                            if (choice != optimalChoice) {
-                                auto const& otherBoundParsOfChoice = checkUpperParameters ? choiceValuations[rowOffset + choice].getLowerParameters() : choiceValuations[rowOffset + choice].getUpperParameters();
-                                if (otherBoundParsOfChoice.find(p) != otherBoundParsOfChoice.end()) {
-                                    ConstantType const& choiceValue = stateResults[choice];
-                                    if (!foundBestValue || (storm::solver::minimize(dirForParameters) ? choiceValue < bestValue : choiceValue > bestValue)) {
-                                        foundBestValue = true;
-                                        bestValue = choiceValue;
+                        if (monRes == nullptr || !monRes->isMonotone(p)) {
+                            // Find the 'best' choice that assigns the parameter to the other bound
+                            ConstantType bestValue = 0;
+                            bool foundBestValue = false;
+                            for (uint64_t choice = 0; choice < stateResults.size(); ++choice) {
+                                if (choice != optimalChoice) {
+                                    auto const& otherBoundParsOfChoice = checkUpperParameters ? choiceValuations[rowOffset + choice].getLowerParameters()
+                                                                                              : choiceValuations[rowOffset + choice].getUpperParameters();
+                                    if (otherBoundParsOfChoice.find(p) != otherBoundParsOfChoice.end()) {
+                                        ConstantType const& choiceValue = stateResults[choice];
+                                        if (!foundBestValue ||
+                                            (storm::solver::minimize(dirForParameters) ? choiceValue < bestValue : choiceValue > bestValue)) {
+                                            foundBestValue = true;
+                                            bestValue = choiceValue;
+                                        }
                                     }
                                 }
                             }
-                        }
-                        auto optimal = storm::utility::convertNumber<double>(stateResults[optimalChoice]);
-                        auto diff = optimal - storm::utility::convertNumber<double>(bestValue);
-                        if (foundBestValue) {
-                            if (checkUpperParameters) {
-                                deltaLower[p] += std::abs(diff);
-                            } else {
-                                deltaUpper[p] += std::abs(diff);
+                            auto optimal = storm::utility::convertNumber<double>(stateResults[optimalChoice]);
+                            auto diff = optimal - storm::utility::convertNumber<double>(bestValue);
+                            if (foundBestValue) {
+                                if (checkUpperParameters) {
+                                    deltaLower[p] += std::abs(diff);
+                                } else {
+                                    deltaUpper[p] += std::abs(diff);
+                                }
                             }
                         }
                     }
@@ -583,35 +586,6 @@ namespace storm {
             return order;
         }
 
-        template<typename SparseModelType, typename ConstantType>
-        std::shared_ptr<storm::analysis::Order>
-        SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::getInitialOrder(storm::storage::ParameterRegion<ValueType> region, bool isOptimistic) {
-            if (this->orderExtender) {
-                std::tuple<std::shared_ptr<storm::analysis::Order>, uint_fast64_t, uint_fast64_t> res = {nullptr, 0,0};
-                std::shared_ptr<storm::analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>> castedPointerReachDtmc = std::dynamic_pointer_cast<storm::analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>>(this->orderExtender);
-                if (castedPointerReachDtmc != nullptr) {
-                    res = castedPointerReachDtmc->toOrder(region, isOptimistic);
-                }
-                std::shared_ptr<storm::analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>> castedPointerReachMdp = std::dynamic_pointer_cast<storm::analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>>(this->orderExtender);
-                if (castedPointerReachMdp != nullptr) {
-                    assert (false);
-                    res = castedPointerReachMdp->toOrder(region, isOptimistic);
-                }
-                std::shared_ptr<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>> castedPointerRewDtmc = std::dynamic_pointer_cast<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>>(this->orderExtender);
-                if (castedPointerRewDtmc != nullptr) {
-                    res = castedPointerRewDtmc->toOrder(region, isOptimistic);
-                }
-                std::shared_ptr<storm::analysis::Order> order = std::get<0>(res);
-                if (order != nullptr && std::get<1>(res) != order->getNumberOfStates()) {
-                    this->orderExtender->setUnknownStates(order, std::get<1>(res), std::get<2>(res));
-                }
-                return order;
-            } else {
-                STORM_LOG_WARN("Extending order not possible");
-                return nullptr;
-            }
-        }
-
         template <typename SparseModelType, typename ConstantType>
         void SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::extendLocalMonotonicityResult(storm::storage::ParameterRegion<ValueType> const& region, std::shared_ptr<storm::analysis::Order> order, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonotonicityResult) {
             if (this->monotoneIncrParameters && !localMonotonicityResult->isFixedParametersSet()) {
@@ -633,7 +607,7 @@ namespace storm {
                         for (auto const &var : variables) {
                             auto monotonicity = localMonotonicityResult->getMonotonicity(state, var);
                             if (monotonicity == Monotonicity::Unknown || monotonicity == Monotonicity::Not) {
-                                monotonicity = monotonicityChecker->checkLocalMonotonicity(order, state, var, region);
+                                monotonicity = this->monotonicityChecker->checkLocalMonotonicity(order, state, var, region);
                                 if (monotonicity == Monotonicity::Unknown ) {
                                     // We skip it
                                 } else {
@@ -654,7 +628,7 @@ namespace storm {
                 auto var = entry.first;
                 bool done = true;
                 for (auto const& state : states) {
-                    done &= order->contains(state) && localMonotonicityResult->getMonotonicity(state, var) != Monotonicity::Unknown;
+                    done &= order->isSufficientForState(state) && localMonotonicityResult->getMonotonicity(state, var) != Monotonicity::Unknown;
                     if (!done) {
                         break;
                     }
@@ -683,62 +657,52 @@ namespace storm {
         void SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::splitSmart(
                 storm::storage::ParameterRegion<ValueType> &region,
                 std::vector<storm::storage::ParameterRegion<ValueType>> &regionVector,
-                storm::analysis::MonotonicityResult<VariableType> &monRes, bool splitForExtremum) const {
+                storm::analysis::MonotonicityResult<VariableType> &monRes, bool minimize) const {
             assert (regionVector.size() == 0);
 
             std::multimap<double, VariableType> sortedOnValues;
+            auto monResult = monRes.getMonotonicityResult();
             std::set<VariableType> consideredVariables;
-            if (splitForExtremum) {
-                if (regionSplitEstimationsEnabled && useRegionSplitEstimates) {
-                    STORM_LOG_INFO("Splitting based on region split estimates");
-                    for (auto &entry : regionSplitEstimates) {
+            if (regionSplitEstimationsEnabled && useRegionSplitEstimates) {
+                STORM_LOG_INFO("Splitting based on region split estimates");
+                for (auto &entry : regionSplitEstimates) {
+                    if (entry.second != 0) {
                         if (this->possibleMonotoneParameters.find(entry.first) != this->possibleMonotoneParameters.end()) {
-                            sortedOnValues.insert({-(entry.second) * storm::utility::convertNumber<double>(region.getDifference(entry.first)), entry.first});
+                            assert ((!monRes.isMonotone(entry.first)));
+                            sortedOnValues.insert({-entry.second * storm::utility::convertNumber<double>(region.getDifference(entry.first)), entry.first});
+                        } else if (!monRes.isMonotone(entry.first)) {
+                            sortedOnValues.insert({-entry.second * std::pow(storm::utility::convertNumber<double>(region.getDifference(entry.first)), 2), entry.first});
                         } else {
-                            sortedOnValues.insert({-(entry.second ), entry.first});
+                            assert (false);
                         }
-                    }
-
-                    for (auto itr = sortedOnValues.begin(); itr != sortedOnValues.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
-                        consideredVariables.insert(itr->second);
-                    }
-                    assert (consideredVariables.size() > 0);
-                    region.split(region.getCenterPoint(), regionVector, std::move(consideredVariables), this->possibleMonotoneParameters);
-                } else {
-                    STORM_LOG_INFO("Splitting based on sorting");
-
-                    auto sortedOnDifference = region.getVariablesSorted();
-                    for (auto itr = sortedOnDifference.begin(); itr != sortedOnDifference.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
-                        if (!this->isUseMonotonicitySet() || !monRes.isMonotone(itr->second)) {
-                            consideredVariables.insert(itr->second);
-                        }
-                    }
-                    assert (consideredVariables.size() > 0 || (monRes.isDone() && monRes.isAllMonotonicity()));
-                    region.split(region.getCenterPoint(), regionVector, std::move(consideredVariables));
-                }
-            } else {
-                // split for pla
-                if (regionSplitEstimationsEnabled && useRegionSplitEstimates) {
-                    STORM_LOG_INFO("Splitting based on region split estimates");
-                    ConstantType diff = this->lastValue - (this->currentCheckTask->getFormula().asOperatorFormula().template getThresholdAs<ConstantType>());
-                    for (auto &entry : regionSplitEstimates) {
-                        if ((!this->isUseMonotonicitySet() || !monRes.isMonotone(entry.first)) && storm::utility::convertNumber<ConstantType>(entry.second) > diff) {
-                            sortedOnValues.insert({-(entry.second * storm::utility::convertNumber<double>(region.getDifference(entry.first)) * storm::utility::convertNumber<double>(region.getDifference(entry.first))), entry.first});
-                        }
-                    }
-
-                    for (auto itr = sortedOnValues.begin(); itr != sortedOnValues.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
-                        consideredVariables.insert(itr->second);
                     }
                 }
-                if (consideredVariables.size() == 0) {
-                    auto sortedOnDifference = region.getVariablesSorted();
-                    for (auto itr = sortedOnDifference.begin(); itr != sortedOnDifference.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
-                        consideredVariables.insert(itr->second);
-                    }
+                for (auto itr = sortedOnValues.begin(); itr != sortedOnValues.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
+                    consideredVariables.insert(itr->second);
                 }
                 assert (consideredVariables.size() > 0);
-                region.split(region.getCenterPoint(), regionVector, std::move(consideredVariables));
+                if (this->isDisableOptimizationSet()) {
+                    region.split(region.getCenterPoint(consideredVariables), regionVector, consideredVariables);
+                } else {
+                    region.split(region.getSplittingPoint(consideredVariables, this->possibleMonotoneIncrParameters, this->possibleMonotoneDecrParameters, minimize), regionVector, std::move(consideredVariables), this->possibleMonotoneParameters);
+                }
+            } else {
+                STORM_LOG_INFO("Splitting based on sorting");
+
+                auto sortedOnDifference = region.getVariablesSorted();
+                for (auto itr = sortedOnDifference.begin(); itr != sortedOnDifference.end() && consideredVariables.size() < region.getSplitThreshold(); ++itr) {
+                    if (!this->isUseMonotonicitySet() || !monRes.isMonotone(itr->second)) {
+                        consideredVariables.insert(itr->second);
+                    }
+                }
+                assert (consideredVariables.size() > 0 || (monRes.isDone() && monRes.isAllMonotonicity()));
+                if (this->isDisableOptimizationSet()) {
+                    region.split(region.getCenterPoint(consideredVariables), regionVector, consideredVariables);
+                } else {
+                    region.split(
+                        region.getSplittingPoint(consideredVariables, this->possibleMonotoneIncrParameters, this->possibleMonotoneDecrParameters, minimize),
+                        regionVector, std::move(consideredVariables));
+                }
             }
         }
 

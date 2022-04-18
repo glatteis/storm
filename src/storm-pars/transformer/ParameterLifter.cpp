@@ -32,9 +32,20 @@ namespace storm {
             rowGroupToStateNumber = std::vector<uint_fast64_t>();
             uint_fast64_t newRowIndex = 0;
             uint_fast64_t countNonParam = 0;
+            uint_fast64_t stateNumber = 0;
+            uint_fast64_t startNextRow = 0;
             for (auto const& rowIndex : selectedRows) {
                 builder.newRowGroup(newRowIndex);
-                rowGroupToStateNumber.push_back(rowIndex);
+
+                bool newState = false;
+                while (startNextRow <= rowIndex) {
+                    stateNumber++;
+                    startNextRow += pMatrix.getRowGroupSize(stateNumber);
+                    newState = true;
+                }
+                if (newState) {
+                    rowGroupToStateNumber.push_back(rowIndex);
+                }
 
                 // Gather the occurring variables within this row and set which entries are non-constant
                 std::set<VariableType> occurringVariables;
@@ -115,7 +126,13 @@ namespace storm {
                     for (auto& var : occurringVariables) {
                         occuringStatesAtVariable[var].insert(rowIndex);
                     }
-                    occurringVariablesAtState[rowIndex] = std::move(occurringVariables);
+                    if (occurringVariablesAtState[rowIndex].size() == 0) {
+                        occurringVariablesAtState[rowIndex] = std::move(occurringVariables);
+                    } else {
+                        for (auto& var : occurringVariables) {
+                            occurringVariablesAtState[rowIndex].insert(var);
+                        }
+                    }
                 }
             }
 
@@ -175,6 +192,7 @@ namespace storm {
 
         template<typename ParametricType, typename ConstantType>
         uint_fast64_t ParameterLifter<ParametricType, ConstantType>::getOriginalStateNumber(uint_fast64_t newState) const {
+            STORM_LOG_ASSERT(newState <= rowGroupToStateNumber.size(), "Getting the original state number for a non-existing state");
             return rowGroupToStateNumber[newState];
         }
 

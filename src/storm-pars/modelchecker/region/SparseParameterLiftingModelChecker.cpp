@@ -20,6 +20,9 @@
 
 #include "storm/exceptions/InvalidArgumentException.h"
 #include "storm/exceptions/NotSupportedException.h"
+#include "storm-pars/analysis/RewardOrderExtenderDtmc.h"
+#include "storm-pars/analysis/ReachabilityOrderExtenderDtmc.h"
+#include "storm-pars/analysis/ReachabilityOrderExtenderMdp.h"
 
 namespace storm {
     namespace modelchecker {
@@ -269,14 +272,23 @@ namespace storm {
                 if (this->isUseBoundsSet()) {
                     numberOfPLACallsBounds++;
                     numberOfPLACallsBounds++;
-                    auto minBound = getBound(env, region, storm::solver::OptimizationDirection::Minimize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
-                    auto maxBound = getBound(env, region, storm::solver::OptimizationDirection::Maximize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                    ExplicitQuantitativeCheckResult<ConstantType> minBound;
+                    ExplicitQuantitativeCheckResult<ConstantType> maxBound;
+                    // Order of setting bounds is important as this influences the regionsplitestimates
+                    if (minimize) {
+                        maxBound = getBound(env, region, storm::solver::OptimizationDirection::Maximize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                        minBound = getBound(env, region, storm::solver::OptimizationDirection::Minimize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+
+                    } else {
+                        minBound = getBound(env, region, storm::solver::OptimizationDirection::Minimize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                        maxBound = getBound(env, region, storm::solver::OptimizationDirection::Maximize, nullptr)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
+                    }
                     if (minimize) {
                         initBound = minBound[*this->parametricModel->getInitialStates().begin()];
                     } else {
                         initBound = maxBound[*this->parametricModel->getInitialStates().begin()];
                     }
-                    orderExtender->setMinMaxValues(minBound, maxBound);
+                    orderExtender->setMinMaxValues(minBound.getValueVector(), maxBound.getValueVector());
                 }
                 auto order = this->getInitialOrder(region, this->isUseOptimisticOrderSet());
                 if (order != nullptr) {
@@ -287,6 +299,9 @@ namespace storm {
                     monotonicityWatch.stop();
                     STORM_LOG_INFO("\nTotal time for monotonicity checking: " << monotonicityWatch << ".\n\n");
 
+                    if (order->isOptimistic()) {
+                        STORM_LOG_WARN("Optimistic monotonicity is used, the obtained extremum cannot be guaranteed to be correct");
+                    }
                     regionQueue.emplace(region, order, monRes, initBound);
                 } else {
                     this->setUseMonotonicity(false);
@@ -374,6 +389,9 @@ namespace storm {
                     auto localMonotonicityResult = regionQueue.top().localMonRes;
                     auto currBound = regionQueue.top().bound;
                     STORM_LOG_INFO("Currently looking at region: " << currRegion);
+                    if (value && currBound) {
+                        STORM_LOG_INFO("Current value : " << value.get() << ", current bound: " << currBound.get() << ".");
+                    }
                     std::vector<storm::storage::ParameterRegion<typename SparseModelType::ValueType>> newRegions;
 
                     // Check whether this region needs further investigation based on the bound of the parent region
@@ -384,13 +402,14 @@ namespace storm {
                                             || (!minimize && currBound.get() > value.get() + storm::utility::convertNumber<ConstantType>(precision));
                     } else if (!investigateBounds && !absolutePrecision){
                         investigateBounds = (minimize && (currBound.get() * (1 + storm::utility::convertNumber<ConstantType>(precision)) < value.get()))
-                                            || (!minimize && (currBound.get() * (1 + storm::utility::convertNumber<ConstantType>(precision)) > value.get()));
+                                            || (!minimize && (currBound.get() * (1 - storm::utility::convertNumber<ConstantType>(precision)) > value.get()));
                     }
 
                     if (investigateBounds) {
                         numberOfPLACalls++;
                         auto bounds = getBound(env, currRegion, dir, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector();
                         currBound = bounds[*this->parametricModel->getInitialStates().begin()];
+
                         // Check whether this region needs further investigation based on the bound of this region
                         bool lookAtRegion;
                         if (absolutePrecision) {
@@ -398,24 +417,12 @@ namespace storm {
                                                 || (!minimize && currBound.get() > value.get() + storm::utility::convertNumber<ConstantType>(precision));
                         } else {
                             lookAtRegion = (minimize && (currBound.get() * (1 + storm::utility::convertNumber<ConstantType>(precision)) < value.get()))
-                                            || (!minimize && (currBound.get() * (1 + storm::utility::convertNumber<ConstantType>(precision)) > value.get()));
+                                            || (!minimize && (currBound.get() * (1 - storm::utility::convertNumber<ConstantType>(precision)) > value.get()));
                         }
                         if (lookAtRegion) {
                             if (useGraphMonotonicity) {
                                 // Continue extending order/monotonicity result
-                                bool changedOrder = false;
-                                if (!order->getDoneBuilding() && orderExtender->isHope(order)) {
-                                    if (numberOfCopiesOrder[order] != 1) {
-                                        numberOfCopiesOrder[order]--;
-                                        order = copyOrder(order);
-                                        numberOfOrderCopies++;
-                                    } else {
-                                        assert (numberOfCopiesOrder[order] == 1);
-                                    }
-                                    this->extendOrder(order, currRegion);
-                                    changedOrder = true;
-                                }
-                                if (changedOrder) {
+                                if (order->getChanged()) {
                                     assert(!localMonotonicityResult->isDone());
 
                                     if (numberOfCopiesMonRes[localMonotonicityResult] != 1) {
@@ -498,9 +505,17 @@ namespace storm {
                             }
 
                             // Check whether this region contains a new 'good' value and set this value
-                            auto point = (useGraphMonotonicity || useDerivativeMonotonicity) ? currRegion.getPoint(dir, *(localMonotonicityResult->getGlobalMonotonicityResult()), possibleMonotoneIncrParameters, possibleMonotoneDecrParameters) : currRegion.getCenterPoint();
+                            auto point = (useGraphMonotonicity || useDerivativeMonotonicity) && this->isDisableOptimizationSet() ? currRegion.getPoint(dir, *(localMonotonicityResult->getGlobalMonotonicityResult())) : (useMonotonicity ? currRegion.getPoint(dir, *(localMonotonicityResult->getGlobalMonotonicityResult()), possibleMonotoneIncrParameters, possibleMonotoneDecrParameters) : currRegion.getCenterPoint());
                             auto currValue = getInstantiationChecker().check(env, point)->template asExplicitQuantitativeCheckResult<ConstantType>()[*this->parametricModel->getInitialStates().begin()];
-                            if (!value || (minimize ? currValue <= value.get() : currValue >= value.get())) {
+                            if (useMonotonicity && !this->isDisableOptimizationSet()) {
+                                auto point2 = currRegion.getPoint(dir, *(localMonotonicityResult->getGlobalMonotonicityResult()));
+                                auto currValue2 =  getInstantiationChecker().check(env, point2)->template asExplicitQuantitativeCheckResult<ConstantType>()[*this->parametricModel->getInitialStates().begin()];
+                                if (currValue2 > currValue) {
+                                    currValue = currValue2;
+                                    point = point2;
+                                }
+                            }
+                            if (!value || (minimize ? currValue < value.get() : currValue > value.get())) {
                                 value = currValue;
                                 valuation = point;
                             }
@@ -511,29 +526,45 @@ namespace storm {
                                                || (!minimize && currBound.get() > value.get() + storm::utility::convertNumber<ConstantType>(precision));
                             } else {
                                 splitRegion = (minimize && (currBound.get() * (1 + storm::utility::convertNumber<ConstantType>(precision)) < value.get()))
-                                            || (!minimize && (currBound.get() * (1 + storm::utility::convertNumber<ConstantType>(precision)) > value.get()));
+                                            || (!minimize && (currBound.get() * (1 - storm::utility::convertNumber<ConstantType>(precision)) > value.get()));
                             }
                             if (splitRegion) {
-                                // We will split the region in this case, but first we set the bounds to extend the order for the new regions.
-                                if (useGraphMonotonicity && this->isUseBoundsSet() && !order->getDoneBuilding()) {
-                                    boundsWatch.start();
+                                // Split the region, has to be done before getting bounds, as otherwise the regionsplitestimates change
+                                if (useGraphMonotonicity) {
+                                    this->splitSmart(currRegion, newRegions,
+                                                     *(localMonotonicityResult->getGlobalMonotonicityResult()), minimize);
+                                } else if (this->isRegionSplitEstimateSupported()) {
+                                    auto empty = storm::analysis::MonotonicityResult<VariableType>();
+                                    this->splitSmart(currRegion, newRegions, empty, minimize);
+                                } else {
+                                    currRegion.split(currRegion.getCenterPoint(), newRegions);
+                                }
+
+                                // We set the bounds to extend the order for the new regions.
+                                if (useMonotonicity && this->isUseBoundsSet() && !order->getDoneBuilding() && orderExtender && (this->isDisableOptimizationSet() || storm::utility::convertNumber<double>(order->getNumberOfSufficientStates())/storm::utility::convertNumber<double>(order->getNumberOfStates()) < 0.25)) {
                                     numberOfPLACallsBounds++;
                                     if (minimize) {
                                         orderExtender->setMinMaxValues(bounds, getBound(env, currRegion, storm::solver::OptimizationDirection::Maximize, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector(), order);
                                     } else {
                                         orderExtender->setMinMaxValues(getBound(env, currRegion, storm::solver::OptimizationDirection::Minimize, localMonotonicityResult)->template asExplicitQuantitativeCheckResult<ConstantType>().getValueVector(), bounds, order);
                                     }
-                                    boundsWatch.stop();
-                                }
-                                // Now split the region
-                                if ((useGraphMonotonicity && !order->isOptimistic()) || useDerivativeMonotonicity) {
-                                    this->splitSmart(currRegion, newRegions,
-                                                     *(localMonotonicityResult->getGlobalMonotonicityResult()), true);
-                                } else if (this->isRegionSplitEstimateSupported()) {
-                                    auto empty = storm::analysis::MonotonicityResult<VariableType>();
-                                    this->splitSmart(currRegion, newRegions, empty, true);
-                                } else {
-                                    currRegion.split(currRegion.getCenterPoint(), newRegions);
+                                    if (orderExtender->isHope(order)) {
+                                        if (numberOfCopiesOrder[order] != 1) {
+                                            // we only create a copy of the order if we extend it.
+                                            numberOfCopiesOrder[order]--;
+                                            order = copyOrder(order);
+                                            numberOfOrderCopies++;
+                                        } else {
+                                            assert (numberOfCopiesOrder[order] == 1);
+                                        }
+                                        auto numberOfStatesBefore = order->getNumberOfSufficientStates();
+                                        this->extendOrder(order, currRegion);
+                                        if (numberOfStatesBefore < order->getNumberOfSufficientStates()) {
+                                            order->setChanged(true);
+                                        } else {
+                                            order->setChanged(false);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -727,15 +758,20 @@ namespace storm {
             std::set<VariableType> monIncr, monDecr, notMon, notMonFirst;
             STORM_PRINT("Number of parameters: " << region.getVariables().size() << std::endl;);
 
+
             if (localMonRes != nullptr) {
                 localMonRes->getGlobalMonotonicityResult()->splitBasedOnMonotonicity(region.getVariables(), monIncr, monDecr, notMonFirst);
-
                 auto numMon = monIncr.size() + monDecr.size();
                 STORM_PRINT("Number of monotone parameters: " << numMon << std::endl;);
                 if (numMon < region.getVariables().size()) {
                     checkForPossibleMonotonicity(env, region, monIncr, monDecr, notMon, notMonFirst, dir);
                     STORM_PRINT("Number of possible monotone parameters: " << (monIncr.size() + monDecr.size() - numMon) << std::endl;);
                     STORM_PRINT("Number of definitely not monotone parameters on entire region: " << notMon.size() << std::endl;);
+                }
+
+                for (auto var : notMon) {
+                    localMonRes->getGlobalMonotonicityResult()->updateMonotonicityResult(var, Monotonicity::Not, true);
+                    localMonRes->getGlobalMonotonicityResult()->setDoneForVar(var);
                 }
 
                 valuation = region.getPoint(dir, monIncr, monDecr);
@@ -745,6 +781,37 @@ namespace storm {
             value = getInstantiationChecker().check(env, valuation)->template asExplicitQuantitativeCheckResult<ConstantType>()[*this->parametricModel->getInitialStates().begin()];
 
             return std::make_pair(storm::utility::convertNumber<typename SparseModelType::ValueType>(value), std::move(valuation));
+        }
+
+        template<typename SparseModelType, typename ConstantType>
+        std::shared_ptr<storm::analysis::Order>
+        SparseParameterLiftingModelChecker<SparseModelType, ConstantType>::getInitialOrder(storm::storage::ParameterRegion<ValueType> region, bool isOptimistic) {
+            if (this->orderExtender) {
+                std::tuple<std::shared_ptr<storm::analysis::Order>, uint_fast64_t, uint_fast64_t> res = {nullptr, 0,0};
+                std::shared_ptr<storm::analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>> castedPointerReachDtmc = std::dynamic_pointer_cast<storm::analysis::ReachabilityOrderExtenderDtmc<ValueType, ConstantType>>(this->orderExtender);
+                if (castedPointerReachDtmc != nullptr) {
+                    res = castedPointerReachDtmc->toOrder(region, isOptimistic);
+                }
+                std::shared_ptr<storm::analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>> castedPointerReachMdp = std::dynamic_pointer_cast<storm::analysis::ReachabilityOrderExtenderMdp<ValueType, ConstantType>>(this->orderExtender);
+                if (castedPointerReachMdp != nullptr) {
+                    res = castedPointerReachMdp->toOrder(region, isOptimistic);
+                }
+                std::shared_ptr<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>> castedPointerRewDtmc = std::dynamic_pointer_cast<storm::analysis::RewardOrderExtenderDtmc<ValueType, ConstantType>>(this->orderExtender);
+                if (castedPointerRewDtmc != nullptr) {
+                    res = castedPointerRewDtmc->toOrder(region, isOptimistic);
+                }
+                std::shared_ptr<storm::analysis::Order> order = std::get<0>(res);
+                if (order == nullptr || order->getNumberOfStates() == 1) {
+                    return nullptr;
+                }
+                if (order != nullptr && std::get<1>(res) != order->getNumberOfStates()) {
+                    this->orderExtender->setUnknownStates(order, std::get<1>(res), std::get<2>(res));
+                }
+                return order;
+            } else {
+                STORM_LOG_WARN("Extending order not possible");
+                return nullptr;
+            }
         }
 
         template class SparseParameterLiftingModelChecker<storm::models::sparse::Dtmc<storm::RationalFunction>, double>;

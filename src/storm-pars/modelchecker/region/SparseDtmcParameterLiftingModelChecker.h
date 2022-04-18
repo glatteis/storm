@@ -40,9 +40,8 @@ namespace storm {
             virtual std::map<VariableType, double> getRegionSplitEstimate() const override;
 
             virtual std::shared_ptr<storm::analysis::Order> extendOrder(std::shared_ptr<storm::analysis::Order> order, storm::storage::ParameterRegion<ValueType> region) override;
-            virtual std::shared_ptr<storm::analysis::Order> getInitialOrder(storm::storage::ParameterRegion<ValueType> region, bool isOptimistic) override;
 
-            virtual void extendLocalMonotonicityResult(storm::storage::ParameterRegion<ValueType> const& region, std::shared_ptr<storm::analysis::Order> order, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonotonicityResult) override;
+            void extendLocalMonotonicityResult(storm::storage::ParameterRegion<ValueType> const& region, std::shared_ptr<storm::analysis::Order> order, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonotonicityResult) override;
 
         protected:
                 
@@ -57,11 +56,11 @@ namespace storm {
 
             virtual std::unique_ptr<CheckResult> computeQuantitativeValues(Environment const& env, storm::storage::ParameterRegion<ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonotonicityResult = nullptr) override;
             
-            void computeRegionSplitEstimates(std::vector<ConstantType> const& quantitativeResult, std::vector<uint_fast64_t> const& schedulerChoices, storm::storage::ParameterRegion<ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters);
+            void computeRegionSplitEstimates(std::vector<ConstantType> const& quantitativeResult, std::vector<uint_fast64_t> const& schedulerChoices, storm::storage::ParameterRegion<ValueType> const& region, storm::solver::OptimizationDirection const& dirForParameters, std::shared_ptr<analysis::MonotonicityResult<VariableType>> monRes);
             
             virtual void reset() override;
 
-            virtual void splitSmart(storm::storage::ParameterRegion<ValueType> &region, std::vector<storm::storage::ParameterRegion<ValueType>> &regionVector, storm::analysis::MonotonicityResult<VariableType> &monRes, bool splitForExtremum) const override;
+            virtual void splitSmart(storm::storage::ParameterRegion<ValueType> &region, std::vector<storm::storage::ParameterRegion<ValueType>> &regionVector, storm::analysis::MonotonicityResult<VariableType> &monRes, bool minimize) const override;
 
         private:
             storm::storage::BitVector maybeStates;
@@ -88,7 +87,6 @@ namespace storm {
 
             // Used for monotonicity
             bool useRegionSplitEstimates;
-            std::unique_ptr<storm::analysis::MonotonicityChecker<ValueType>> monotonicityChecker;
 
 
         };

@@ -1142,8 +1142,8 @@ namespace storm {
                             storm::api::parseMonotoneParameters<ValueType>(monSettings.getMonotoneParameterFilename(),
                                     model->as<storm::models::sparse::Model<ValueType>>()));
                 }
-                // TODO: is onlyGlobalSet was used here
-                verifyParametricModel<DdType, ValueType>(model, input, regions, samples, storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false, monSettings.isUsePLABoundsSet(), monSettings.isOptimisticOrderSet(), monSettings.getMonotonicityType()), monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
+// TODO: is onlyGlobalSet was used here
+                verifyParametricModel<DdType, ValueType>(model, input, regions, samples, storm::api::MonotonicitySetting(parSettings.isUseMonotonicitySet(), false, monSettings.isUsePLABoundsSet(), monSettings.isOptimisticOrderSet(), monSettings.isDisableOptimizationSet(), monSettings.getMonotonicityType()), monotoneParameters, monSettings.getMonotonicityThreshold(), omittedParameters);
             }
         }
 

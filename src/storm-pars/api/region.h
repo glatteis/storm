@@ -33,13 +33,15 @@ namespace storm {
 
     namespace api {
         struct MonotonicitySetting {
-            MonotonicitySetting(bool a, bool b, bool c, bool d, modelchecker::MonotonicityType e) { useMonotonicity = a; useOnlyGlobalMonotonicity = b; useBoundsFromPLA = c; useOptimisticOrder = d; monotonicityType = e;}
-            MonotonicitySetting() { useMonotonicity = false; useOnlyGlobalMonotonicity = false; useBoundsFromPLA = false; useOptimisticOrder = false; monotonicityType = modelchecker::MonotonicityType::GRAPH; }
+            MonotonicitySetting(bool a, bool b, bool c, bool d, bool e, modelchecker::MonotonicityType f) { useMonotonicity = a; useOnlyGlobalMonotonicity = b; useBoundsFromPLA = c; useOptimisticOrder = d; disableOptimization = e; monotonicityType = f;}
+            MonotonicitySetting() { useMonotonicity = false; useOnlyGlobalMonotonicity = false; useBoundsFromPLA = false; useOptimisticOrder = false; disableOptimization = false; monotonicityType = modelchecker::MonotonicityType::GRAPH; }
+
             bool useMonotonicity;
             bool useOnlyGlobalMonotonicity;
             bool useBoundsFromPLA;
             bool useOptimisticOrder;
             modelchecker::MonotonicityType monotonicityType;
+            bool disableOptimization;
         };
 
         template <typename ValueType>
@@ -164,12 +166,20 @@ namespace storm {
                 checker->setUseBounds(monotonicitySetting.useBoundsFromPLA);
                 checker->setMonotonicityType(monotonicitySetting.monotonicityType);
                 checker->setUseOptimisticOrder(monotonicitySetting.useOptimisticOrder);
+                checker->setDisableOptimization(monotonicitySetting.disableOptimization);
                 if (monotonicitySetting.useMonotonicity && monotoneParameters) {
                     checker->setMonotoneParameters(monotoneParameters.get());
                 }
             } else if (consideredModel->isOfType(storm::models::ModelType::Mdp)) {
-                STORM_LOG_WARN_COND(!monotonicitySetting.useMonotonicity, "Usage of monotonicity not supported for this type of model, continuing without montonicity checking");
                 checker = std::make_shared<storm::modelchecker::SparseMdpParameterLiftingModelChecker<storm::models::sparse::Mdp<ParametricType>, ConstantType>>();
+                checker->setUseMonotonicity(monotonicitySetting.useMonotonicity);
+                checker->setUseOnlyGlobal(monotonicitySetting.useOnlyGlobalMonotonicity);
+                checker->setUseBounds(monotonicitySetting.useBoundsFromPLA);
+                checker->setUseOptimisticOrder(monotonicitySetting.useOptimisticOrder);
+                checker->setDisableOptimization(monotonicitySetting.disableOptimization);
+                if (monotonicitySetting.useMonotonicity && monotoneParameters) {
+                    checker->setMonotoneParameters(monotoneParameters.get());
+                }
             } else {
                 STORM_LOG_THROW(false, storm::exceptions::InvalidOperationException, "Unable to perform parameterLifting on the provided model type.");
             }

@@ -76,7 +76,7 @@ namespace storm {
         }
 
         template <typename ValueType, typename ConstantType>
-        AssumptionStatus AssumptionChecker<ValueType, ConstantType>::validateAssumption(uint_fast64_t state1, uint_fast64_t state2,std::shared_ptr<expressions::BinaryRelationExpression> assumption, std::shared_ptr<Order> order, storage::ParameterRegion<ValueType> region, std::vector<ConstantType>const minValues, std::vector<ConstantType>const maxValues) const {
+        AssumptionStatus AssumptionChecker<ValueType, ConstantType>::validateAssumption(uint_fast64_t state1, uint_fast64_t state2, std::shared_ptr<expressions::BinaryRelationExpression> assumption, std::shared_ptr<Order> order, storage::ParameterRegion<ValueType> region, std::vector<ConstantType>const minValues, std::vector<ConstantType>const maxValues) const {
             // First check if based on sample points the assumption can be discharged
             assert (state1 == std::stoull(assumption->getFirstOperand()->asVariableExpression().getVariableName()));
             assert (state2 == std::stoull(assumption->getSecondOperand()->asVariableExpression().getVariableName()));
@@ -86,6 +86,7 @@ namespace storm {
             }
             assert (result != AssumptionStatus::VALID);
 
+            // TODO: use Optimistic here as well?
             if (minValues.size() != 0) {
                 if (assumption->getRelationType() == expressions::BinaryRelationExpression::RelationType::Greater) {
                     if (minValues[state1] > maxValues[state2]) {
@@ -115,7 +116,59 @@ namespace storm {
                                 exceptions::NotSupportedException,
                                 "Only Greater Or Equal assumptions supported");
 
-                result = validateAssumptionSMTSolver(state1, state2, assumption, order, region, minValues, maxValues);
+                if (order->isActionSetAtState(state1) && order->isActionSetAtState(state2)) {
+                    result = validateAssumptionSMTSolver(state1, state2, order->getActionAtState(state1), order->getActionAtState(state2), assumption, order, region, minValues, maxValues);
+                } else if (order->isActionSetAtState(state1)) {
+                    bool initialized = false;
+                    for (auto action2 = 0; action2 < this->matrix.getRowGroupSize(state2); ++action2) {
+                        auto tempResult = validateAssumptionSMTSolver(state1, state2, order->getActionAtState(state1), action2, assumption, order, region, minValues, maxValues);
+                        if (!initialized) {
+                            result = tempResult;
+                            initialized = true;
+                        } else if (result == AssumptionStatus::VALID && tempResult == AssumptionStatus::INVALID) {
+                            result = AssumptionStatus::UNKNOWN;
+                        } else if (result == AssumptionStatus::INVALID && tempResult == AssumptionStatus::VALID) {
+                            result = AssumptionStatus::UNKNOWN;
+                        }
+                        if (result == AssumptionStatus::UNKNOWN || tempResult == AssumptionStatus::UNKNOWN) {
+                            break;
+                        }
+                    }
+                } else if (order->isActionSetAtState(state2)) {
+                    bool initialized = false;
+                    for (auto action1 = 0; action1 < this->matrix.getRowGroupSize(state1); ++action1) {
+                        auto tempResult = validateAssumptionSMTSolver(state1, state2, action1, order->getActionAtState(state2), assumption, order, region, minValues, maxValues);
+                        if (!initialized) {
+                            result = tempResult;
+                            initialized = true;
+                        } else if (result == AssumptionStatus::VALID && tempResult == AssumptionStatus::INVALID) {
+                            result = AssumptionStatus::UNKNOWN;
+                        } else if (result == AssumptionStatus::INVALID && tempResult == AssumptionStatus::VALID) {
+                            result = AssumptionStatus::UNKNOWN;
+                        }
+                        if (result == AssumptionStatus::UNKNOWN || tempResult == AssumptionStatus::UNKNOWN) {
+                            break;
+                        }
+                    }
+                } else {
+                    bool initialized = false;
+                    for (auto action1 = 0; action1 < this->matrix.getRowGroupSize(state1); ++action1) {
+                        for (auto action2 = 0; action2 < this->matrix.getRowGroupSize(state2); ++action2) {
+                            auto tempResult = validateAssumptionSMTSolver(state1, state2, action1, action2, assumption, order, region, minValues, maxValues);
+                            if (!initialized) {
+                                result = tempResult;
+                                initialized = true;
+                            } else if (result == AssumptionStatus::VALID && tempResult == AssumptionStatus::INVALID) {
+                                result = AssumptionStatus::UNKNOWN;
+                            } else if (result == AssumptionStatus::INVALID && tempResult == AssumptionStatus::VALID) {
+                                result = AssumptionStatus::UNKNOWN;
+                            }
+                            if (result == AssumptionStatus::UNKNOWN || tempResult == AssumptionStatus::UNKNOWN) {
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             return result;
         }
@@ -142,14 +195,16 @@ namespace storm {
         }
 
         template <typename ValueType, typename ConstantType>
-        AssumptionStatus AssumptionChecker<ValueType, ConstantType>::validateAssumptionSMTSolverTwoSucc(uint_fast64_t state1, uint_fast64_t state2, std::shared_ptr<expressions::BinaryRelationExpression> assumption, std::shared_ptr<Order> order, storage::ParameterRegion<ValueType> region, std::vector<ConstantType>const minValues, std::vector<ConstantType>const maxValues) const {
+        AssumptionStatus AssumptionChecker<ValueType, ConstantType>::validateAssumptionSMTSolverTwoSucc(uint_fast64_t state1, uint_fast64_t state2, uint_fast64_t action1, uint_fast64_t action2, std::shared_ptr<expressions::BinaryRelationExpression> assumption, std::shared_ptr<Order> order, storage::ParameterRegion<ValueType> region, std::vector<ConstantType>const minValues, std::vector<ConstantType>const maxValues) const {
+            STORM_LOG_ASSERT (!order->isActionSetAtState(state1) || action1 == order->getActionAtState(state1), "Expecting action to either not be set, or to correspond to the action set in the order");
+            STORM_LOG_ASSERT (!order->isActionSetAtState(state2) || action2 == order->getActionAtState(state2), "Expecting action to either not be set, or to correspond to the action set in the order");
             std::shared_ptr<utility::solver::SmtSolverFactory> smtSolverFactory = std::make_shared<utility::solver::MathsatSmtSolverFactory>();
             std::shared_ptr<expressions::ExpressionManager> manager(new expressions::ExpressionManager());
             AssumptionStatus result = AssumptionStatus::UNKNOWN;
             auto var1 = assumption->getFirstOperand()->asVariableExpression().getVariableName();
             auto var2 = assumption->getSecondOperand()->asVariableExpression().getVariableName();
-            auto row1 = matrix.getRow(state1);
-            auto row2 = matrix.getRow(state2);
+            auto row1 = matrix.getRow(state1, action1);
+            auto row2 = matrix.getRow(state2, action2);
 
             STORM_LOG_ASSERT(row1.getNumberOfEntries() == 2 || row2.getNumberOfEntries() == 2, "One of the states should have 2 successors");
 
@@ -297,7 +352,6 @@ namespace storm {
                 assert (assumption->getRelationType() == expressions::BinaryRelationExpression::RelationType::Equal);
                 exprToCheck = expr1 != expr2;
             }
-
             s.add(exprToCheck);
             auto smtRes = s.check();
             if (smtRes == solver::SmtSolver::CheckResult::Unsat) {
@@ -307,17 +361,18 @@ namespace storm {
             return result;
         }
 
-
         template <typename ValueType, typename ConstantType>
-        AssumptionStatus AssumptionChecker<ValueType, ConstantType>::validateAssumptionSMTSolver(uint_fast64_t state1, uint_fast64_t state2, std::shared_ptr<expressions::BinaryRelationExpression> assumption, std::shared_ptr<Order> order, storage::ParameterRegion<ValueType> region, std::vector<ConstantType>const minValues, std::vector<ConstantType>const maxValues) const {
+        AssumptionStatus AssumptionChecker<ValueType, ConstantType>::validateAssumptionSMTSolver(uint_fast64_t state1, uint_fast64_t state2, uint_fast64_t action1, uint_fast64_t action2, std::shared_ptr<expressions::BinaryRelationExpression> assumption, std::shared_ptr<Order> order, storage::ParameterRegion<ValueType> region, std::vector<ConstantType>const minValues, std::vector<ConstantType>const maxValues) const {
+            STORM_LOG_ASSERT (!order->isActionSetAtState(state1) || action1 == order->getActionAtState(state1), "Expecting action to either not be set, or to correspond to the action set in the order");
+            STORM_LOG_ASSERT (!order->isActionSetAtState(state2) || action2 == order->getActionAtState(state2), "Expecting action to either not be set, or to correspond to the action set in the order");
 
             auto var1 = assumption->getFirstOperand()->asVariableExpression().getVariableName();
             auto var2 = assumption->getSecondOperand()->asVariableExpression().getVariableName();
-            auto row1 = matrix.getRow(state1);
-            auto row2 = matrix.getRow(state2);
+            auto row1 = matrix.getRow(state1, action1);
+            auto row2 = matrix.getRow(state2, action2);
 
             if (row1.getNumberOfEntries() == 2 && row2.getNumberOfEntries() == 2) {
-                AssumptionStatus result = validateAssumptionSMTSolverTwoSucc(state1, state2, assumption, order, region, minValues, maxValues);
+                AssumptionStatus result = validateAssumptionSMTSolverTwoSucc(state1, state2, action1, action2, assumption, order, region, minValues, maxValues);
                 if (result != AssumptionStatus::UNKNOWN) {
                     return result;
                 }
@@ -514,14 +569,12 @@ namespace storm {
             } else {
                 exprToCheck = expr1 != expr2;
             }
-
             s.add(exprToCheck);
             solver::SmtSolver::CheckResult smtRes = s.check();
+
             if (smtRes == solver::SmtSolver::CheckResult::Unsat) {
                 // If it is unsatisfiable the original assumtpion should be valid
                 return AssumptionStatus::VALID;
-            } else if (smtRes == solver::SmtSolver::CheckResult::Sat && orderKnown) {
-                return AssumptionStatus::INVALID;
             }
             return AssumptionStatus::UNKNOWN;
         }
@@ -535,6 +588,7 @@ namespace storm {
             std::vector<ConstantType> vals;
             return validateAssumption(var1, var2, assumption, order, region, vals, vals);
         }
+
         template<typename ValueType, typename ConstantType>
         void AssumptionChecker<ValueType, ConstantType>::setRewardModel(std::shared_ptr<storm::models::sparse::StandardRewardModel<ValueType>> rewardModel) {
             this->rewardModel = rewardModel;

@@ -24,6 +24,7 @@ namespace storm {
         template <typename SparseModelType, typename ConstantType>
         class SparseParameterLiftingModelChecker : public RegionModelChecker<typename SparseModelType::ValueType> {
         public:
+            typedef typename SparseModelType::ValueType ValueType;
             typedef typename RegionModelChecker<typename SparseModelType::ValueType>::VariableType VariableType;
             typedef typename storm::analysis::MonotonicityResult<VariableType>::Monotonicity Monotonicity;
 
@@ -64,6 +65,7 @@ namespace storm {
 
             SparseModelType const& getConsideredParametricModel() const;
             CheckTask<storm::logic::Formula, ConstantType> const& getCurrentCheckTask() const;
+            std::shared_ptr<storm::analysis::Order> getInitialOrder(storm::storage::ParameterRegion<ValueType> region, bool isOptimistic) override;
 
         protected:
             void specifyFormula(Environment const& env, CheckTask<storm::logic::Formula, typename SparseModelType::ValueType> const& checkTask);
@@ -94,8 +96,11 @@ namespace storm {
             std::pair<typename SparseModelType::ValueType, typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation> checkForPossibleMonotonicity(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, std::set<VariableType>& possibleMonotoneIncrParameters, std::set<VariableType>& possibleMonotoneDecrParameters, std::set<VariableType>& possibleNotMonotoneParameters, std::set<VariableType>const& consideredVariables, storm::solver::OptimizationDirection const& dir);
             std::pair<typename SparseModelType::ValueType, typename storm::storage::ParameterRegion<typename SparseModelType::ValueType>::Valuation> getGoodInitialPoint(Environment const& env, storm::storage::ParameterRegion<typename SparseModelType::ValueType> const& region, storm::solver::OptimizationDirection const& dir, std::shared_ptr<storm::analysis::LocalMonotonicityResult<VariableType>> localMonRes);
             std::set<VariableType> possibleMonotoneParameters;
+            std::set<VariableType> definitelyMonotoneParameters;
             std::set<VariableType> possibleMonotoneIncrParameters;
             std::set<VariableType> possibleMonotoneDecrParameters;
+            std::unique_ptr<storm::analysis::MonotonicityChecker<ValueType>> monotonicityChecker;
+
 
         private:
             // store the current formula. Note that currentCheckTask only stores a reference to the formula.

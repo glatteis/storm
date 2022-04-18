@@ -10,6 +10,7 @@
 
 #include "storm-pars/analysis/Order.h"
 #include "storm-pars/analysis/MonotonicityResult.h"
+#include "storm-pars/analysis/LocalMonotonicityResult.h"
 #include "storm-pars/analysis/MonotonicityChecker.h"
 #include "storm-pars/storage/ParameterRegion.h"
 #include "AssumptionMaker.h"
@@ -126,7 +127,7 @@ namespace storm {
              * @param order Order for which we want to check.
              * @return true if the unknown states for this order can be sorted based on the min max values.
              */
-            bool isHope(std::shared_ptr<Order> order);
+            bool isHope(std::shared_ptr<Order> order) const;
 
             /**
              * Returns all variables occuring at the outgoing transitions of states.
@@ -137,10 +138,12 @@ namespace storm {
 
             /**
              * Returns a vector with the successors for this state.
+             * If an action is set in the order, the successors for this action are returned, otherwise all possible successors are returned.
              * @param state
+             * @param order
              * @return
              */
-            std::vector<uint_fast64_t> const& getSuccessors(uint_fast64_t state, uint_fast64_t choice = 0);
+            std::pair<bool, std::vector<uint_fast64_t>&> getSuccessors(uint_fast64_t state, std::shared_ptr<Order> order);
 
 
             /**
@@ -174,6 +177,7 @@ namespace storm {
              */
             virtual std::shared_ptr<Order> getInitialOrder(bool isOptimistic) = 0;
 
+            virtual bool findBestAction(std::shared_ptr<Order> order, storage::ParameterRegion<ValueType>& region, uint_fast64_t state) = 0;
 
             // Order extension
             Order::NodeComparison addStatesBasedOnMinMax(std::shared_ptr<Order> order, uint_fast64_t state1, uint_fast64_t state2) const;
@@ -184,6 +188,7 @@ namespace storm {
             virtual void handleOneSuccessor(std::shared_ptr<Order> order, uint_fast64_t currentState, uint_fast64_t successor) = 0;
             void handleAssumption(std::shared_ptr<Order> order, std::shared_ptr<expressions::BinaryRelationExpression> assumption) const;
             std::pair<uint_fast64_t, bool> getNextState(std::shared_ptr<Order> order, uint_fast64_t stateNumber, bool done);
+            void addStatesMinMax(std::shared_ptr<Order> order);
 
             // Order properties
             boost::optional<storm::storage::BitVector> topStates;
