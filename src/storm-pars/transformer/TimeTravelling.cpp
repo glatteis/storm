@@ -40,7 +40,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
 
     auto allParameters = storm::models::sparse::getAllParameters(dtmc);
 
-    models::sparse::StateLabeling newLabels(dtmc.getStateLabeling());
+    models::sparse::StateLabeling runningLabeling(dtmc.getStateLabeling());
 
     // Check the reward model - do not touch states with rewards
     boost::optional<std::vector<RationalFunction>> stateRewardVector;
@@ -104,7 +104,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
     // To prevent infinite unrolling of parametric loops
     std::set<std::pair<RationalFunctionVariable, std::set<uint_fast64_t>>> alreadyReorderedWrt;
 
-    updateTreeStates(treeStates, workingSets, flexibleMatrix, allParameters, stateRewardVector);
+    updateTreeStates(treeStates, workingSets, flexibleMatrix, allParameters, stateRewardVector, runningLabeling);
     while (!topologicalOrderingStack.empty()) {
         auto state = topologicalOrderingStack.top();
         std::cout << state << std::endl;
@@ -113,7 +113,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         bool moreThanOneVarReachable = false;
         bool alreadyReorderedWrtThis = true;
         for (auto const& parameter : allParameters) {
-            if (!treeStates.at(parameter).count(state)) {
+            if (!treeStates[parameter].count(state)) {
                 continue;
             }
             auto const entry = treeStates.at(parameter).at(state);
@@ -129,10 +129,10 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
             continue;
         }
         std::map<uint_fast64_t, bool> alreadyVisited;
-        jipConvert(state, flexibleMatrix, alreadyVisited, treeStates, allParameters, stateRewardVector);
+        jipConvert(state, flexibleMatrix, alreadyVisited, treeStates, allParameters, stateRewardVector, runningLabeling);
 
         #if WRITE_DTMCS
-        models::sparse::Dtmc<RationalFunction> newnewDTMC(flexibleMatrix.createSparseMatrix(), newLabels);
+        models::sparse::Dtmc<RationalFunction> newnewDTMC(flexibleMatrix.createSparseMatrix(), runningLabeling);
         if (stateRewardVector) {
             models::sparse::StandardRewardModel<RationalFunction> newRewardModel(*stateRewardVector);
             newnewDTMC.addRewardModel(*stateRewardName, newRewardModel);
@@ -281,36 +281,40 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                 newStateIndex += 3;
             }
         }
-        
+
+        // Extend labeling to more states (Found no better way to do it)
+        models::sparse::StateLabeling nextNewLabels(newMatrixSize);
+        for (auto const& label : runningLabeling.getLabels()) {
+            nextNewLabels.addLabel(label);
+        }
+        for (uint_fast64_t state = 0; state < flexibleMatrix.getRowCount(); state++) {
+            for (auto const& label : runningLabeling.getLabelsOfState(state)) {
+                nextNewLabels.addLabelToState(label, state);
+            }
+        }
         for (uint_fast64_t i = flexibleMatrix.getRowCount(); i < newMatrixSize; i++) {
+            // We assume that everything that we time-travel has the same labels for now.
+            for (auto const& label : runningLabeling.getLabelsOfState(state)) {
+                nextNewLabels.addLabelToState(label, i);
+            }
+            // Next consider the new states
             topologicalOrderingStack.push(i);
+            // New states have zero reward
             if (stateRewardVector) {
                 stateRewardVector->push_back(storm::utility::zero<RationalFunction>());
             }
         }
+        runningLabeling = nextNewLabels;
         
-        
-        
-        updateTreeStates(treeStates, workingSets, matrixWithAdditionalStates, allParameters, stateRewardVector);
+        updateTreeStates(treeStates, workingSets, matrixWithAdditionalStates, allParameters, stateRewardVector, runningLabeling);
 
         // alreadyVisited.clear();
         // jipConvert(state, flexibleMatrix, alreadyVisited, treeStates, allParameters);
 
-        // Extend labeling to more states (Found no better way to do it)
-        models::sparse::StateLabeling nextNewLabels(newMatrixSize);
-        for (auto const& label : newLabels.getLabels()) {
-            nextNewLabels.addLabel(label);
-        }
-        for (uint_fast64_t state = 0; state < flexibleMatrix.getRowCount(); state++) {
-            for (auto const& label : newLabels.getLabelsOfState(state)) {
-                nextNewLabels.addLabelToState(label, state);
-            }
-        }
-        newLabels = nextNewLabels;
         flexibleMatrix = matrixWithAdditionalStates;
 
         #if WRITE_DTMCS
-        models::sparse::Dtmc<RationalFunction> newnewnewDTMC(flexibleMatrix.createSparseMatrix(), newLabels);
+        models::sparse::Dtmc<RationalFunction> newnewnewDTMC(flexibleMatrix.createSparseMatrix(), runningLabeling);
         if (stateRewardVector) {
             models::sparse::StandardRewardModel<RationalFunction> newRewardModel(*stateRewardVector);
             newnewnewDTMC.addRewardModel(*stateRewardName, newRewardModel);
@@ -326,7 +330,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
     auto newTransitionMatrix = flexibleMatrix.createSparseMatrix();
     transitionMatrix = newTransitionMatrix;
 
-    models::sparse::Dtmc<RationalFunction> newDTMC(transitionMatrix, newLabels);
+    models::sparse::Dtmc<RationalFunction> newDTMC(transitionMatrix, runningLabeling);
 
     if (stateRewardVector) {
         models::sparse::StandardRewardModel<RationalFunction> newRewardModel(*stateRewardVector);
@@ -366,11 +370,12 @@ void TimeTravelling::updateTreeStates(
     std::map<RationalFunctionVariable, std::set<uint_fast64_t>>& workingSets,
     storage::FlexibleSparseMatrix<RationalFunction>& flexibleMatrix,
     const std::set<carl::Variable>& allParameters,
-    const boost::optional<std::vector<RationalFunction>>& stateRewardVector
+    const boost::optional<std::vector<RationalFunction>>& stateRewardVector,
+    const models::sparse::StateLabeling stateLabelling
 ) {
     auto backwardsTransitions = flexibleMatrix.createSparseMatrix().transpose(true);
     for (auto const& parameter : allParameters) {
-        std::set<uint_fast64_t> workingSet = workingSets.at(parameter);
+        std::set<uint_fast64_t> workingSet = workingSets[parameter];
         while (!workingSet.empty()) {
             std::set<uint_fast64_t> newWorkingSet;
             for (uint_fast64_t row : workingSet) {
@@ -378,7 +383,7 @@ void TimeTravelling::updateTreeStates(
                     continue;
                 }
                 for (auto const& entry : backwardsTransitions.getRow(row)) {
-                    if (entry.getValue().isConstant()) {
+                    if (entry.getValue().isConstant() && stateLabelling.getLabelsOfState(entry.getColumn()) == stateLabelling.getLabelsOfState(row)) {
                         // If the set of tree states at the current position is a subset of the set of
                         // tree states of the parent state, we've reached some loop. Then we can stop.
                         bool isSubset = true;
@@ -408,7 +413,8 @@ void TimeTravelling::updateTreeStates(
 bool TimeTravelling::jipConvert(uint_fast64_t state, storage::FlexibleSparseMatrix<RationalFunction>& matrix, std::map<uint_fast64_t, bool>& alreadyVisited,
                                        const std::map<RationalFunctionVariable, std::map<uint_fast64_t, std::set<uint_fast64_t>>>& treeStates,
                                        const std::set<carl::Variable>& allParameters,
-                                       const boost::optional<std::vector<RationalFunction>>& stateRewardVector
+                                       const boost::optional<std::vector<RationalFunction>>& stateRewardVector,
+                                       const models::sparse::StateLabeling stateLabelling
                                        ) {
     auto copiedRow = matrix.getRow(state);
     bool firstIteration = true;
@@ -422,16 +428,19 @@ bool TimeTravelling::jipConvert(uint_fast64_t state, storage::FlexibleSparseMatr
             return false;
         }
         uint_fast64_t nextState = entry.getColumn();
-        bool constantTransition;
+        bool continueConvertingHere;
         if (stateRewardVector && !stateRewardVector->at(entry.getColumn()).isZero()) {
-            constantTransition = false;
+            continueConvertingHere = false;
+        // TODO this condition is kind of too harsh
+        } else if (stateLabelling.getLabelsOfState(state) != stateLabelling.getLabelsOfState(nextState)) {
+            continueConvertingHere = false;
         } else {
             if (alreadyVisited.count(nextState)) {
-                constantTransition = alreadyVisited.at(nextState);
+                continueConvertingHere = alreadyVisited.at(nextState);
             } else {
                 alreadyVisited[nextState] = false;
-                constantTransition = jipConvert(nextState, matrix, alreadyVisited, treeStates, allParameters, stateRewardVector);
-                alreadyVisited[nextState] = constantTransition;
+                continueConvertingHere = jipConvert(nextState, matrix, alreadyVisited, treeStates, allParameters, stateRewardVector, stateLabelling);
+                alreadyVisited[nextState] = continueConvertingHere;
             }
         }
         RationalFunction probability = entry.getValue();
@@ -439,7 +448,7 @@ bool TimeTravelling::jipConvert(uint_fast64_t state, storage::FlexibleSparseMatr
             matrix.getRow(state).clear();
             firstIteration = false;
         }
-        if (constantTransition) {
+        if (continueConvertingHere) {
             for (auto const& successor : matrix.getRow(nextState)) {
                 RationalFunction succProbability = successor.getValue();
                 storm::storage::MatrixEntry<uint_fast64_t, RationalFunction> newEntry(successor.getColumn(), probability * succProbability);
