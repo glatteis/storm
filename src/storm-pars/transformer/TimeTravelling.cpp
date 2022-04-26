@@ -371,7 +371,8 @@ std::vector<storm::storage::MatrixEntry<uint_fast64_t, RationalFunction>> TimeTr
     return newEntries;
 }
 
-bool TimeTravelling::labelsIntersectedEqual(const std::set<std::string>& labels1, const std::set<std::string>& labels2, const std::set<std::string>& intersection) {
+bool TimeTravelling::labelsIntersectedEqual(const std::set<std::string>& labels1, const std::set<std::string>& labels2,
+                                            const std::set<std::string>& intersection) {
     for (auto const& label : intersection) {
         bool set1ContainsLabel = labels1.count(label) > 0;
         bool set2ContainsLabel = labels2.count(label) > 0;
@@ -397,8 +398,8 @@ void TimeTravelling::updateTreeStates(std::map<RationalFunctionVariable, std::ma
                     continue;
                 }
                 for (auto const& entry : backwardsTransitions.getRow(row)) {
-                    if (entry.getValue().isConstant() && 
-                    labelsIntersectedEqual(stateLabeling.getLabelsOfState(entry.getColumn()), stateLabeling.getLabelsOfState(row), labelsInFormula)) {
+                    if (entry.getValue().isConstant() &&
+                        labelsIntersectedEqual(stateLabeling.getLabelsOfState(entry.getColumn()), stateLabeling.getLabelsOfState(row), labelsInFormula)) {
                         // If the set of tree states at the current position is a subset of the set of
                         // tree states of the parent state, we've reached some loop. Then we can stop.
                         bool isSubset = true;
@@ -449,7 +450,8 @@ bool TimeTravelling::jipConvert(uint_fast64_t state, storage::FlexibleSparseMatr
                 continueConvertingHere = alreadyVisited.at(nextState);
             } else {
                 alreadyVisited[nextState] = false;
-                continueConvertingHere = jipConvert(nextState, matrix, alreadyVisited, treeStates, allParameters, stateRewardVector, stateLabeling, labelsInFormula);
+                continueConvertingHere =
+                    jipConvert(nextState, matrix, alreadyVisited, treeStates, allParameters, stateRewardVector, stateLabeling, labelsInFormula);
                 alreadyVisited[nextState] = continueConvertingHere;
             }
         }
