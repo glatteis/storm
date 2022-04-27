@@ -26,7 +26,7 @@
 #include "utility/graph.h"
 #include "utility/macros.h"
 
-#define WRITE_DTMCS 1
+#define WRITE_DTMCS 0
 
 namespace storm {
 namespace transformer {
