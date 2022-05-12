@@ -1,10 +1,10 @@
 #pragma once
 
+#include <carl/util/hash.h>
 #include <memory>
 #include <vector>
 #include <unordered_map>
 #include <set>
-
 
 #include "storm-pars/storage/ParameterRegion.h"
 #include "storm-pars/utility/parametric.h"
@@ -77,23 +77,31 @@ namespace storm {
             uint_fast64_t getOriginalStateNumber(uint_fast64_t newState) const;
             uint_fast64_t getRowGroupSize(uint_fast64_t originalState) const;
             uint_fast64_t getRowGroupCount() const;
+            
+
+            bool onlyLinearTransitions(typename storage::SparseMatrix<ParametricType>::const_rows row) const;
 
             /*
              * During initialization, the actual regions are not known. Hence, we consider abstract valuations,
-             * where it is only known whether a parameter will be set to either the lower/upper bound of the region or whether this is unspecified
+             * - standard PLA transitions (RectangleAbstractValuation): it is only known whether a parameter
+             *   will be set to either the lower/upper bound of the region or
+             *   whether this is unspecified. The getConcreteValuation() function returns a rectangle
+             * - big-step PLA transitions: There is only a single parameter, which is left unspecified.
+             *   The getConcreteValuation() function returns the vertices of the convex polygon
              */
-            class AbstractValuation {
+            
+            class RectangleAbstractValuation {
             public:
-                AbstractValuation() = default;
-                AbstractValuation(AbstractValuation const& other) = default;
-                bool operator==(AbstractValuation const& other) const;
+                RectangleAbstractValuation() = default;
+                RectangleAbstractValuation(RectangleAbstractValuation const& other) = default;
+                bool operator==(RectangleAbstractValuation const& other) const;
                 
                 void addParameterLower(VariableType const& var);
                 void addParameterUpper(VariableType const& var);
                 void addParameterUnspecified(VariableType const& var);
                 
                 std::size_t getHashValue() const;
-                AbstractValuation getSubValuation(std::set<VariableType> const& pars) const;
+                RectangleAbstractValuation getSubValuation(std::set<VariableType> const& pars) const;
                 std::set<VariableType> const& getLowerParameters() const;
                 std::set<VariableType> const& getUpperParameters() const;
                 std::set<VariableType> const& getUnspecifiedParameters() const;
@@ -107,10 +115,34 @@ namespace storm {
             private:
                 std::set<VariableType> lowerPars, upperPars, unspecifiedPars;
             };
-            
+
+            class BigStepAbstractValuation {
+            public:
+                BigStepAbstractValuation() = default;
+                BigStepAbstractValuation(BigStepAbstractValuation const& other) = default;
+                bool operator==(BigStepAbstractValuation const& other) const;
+                
+                void setParameter(VariableType const& var);
+                void setTransitions(std::vector<storm::RationalFunction> const& transitions);
+
+                std::size_t getHashValue() const;
+
+                VariableType const& getParameter() const;
+
+                /*!
+                 * Returns the concrete transitions given a region of the parameter.
+                 */
+                std::vector<CoefficientType> getConcreteTransitions(storm::storage::ParameterRegion<ParametricType> const& region) const;
+            private:
+                VariableType parameter;
+                std::vector<storm::RationalFunction> const& transitions;
+            };
+
+            using AbstractValuation = boost::variant<typename ParameterLifter<ParametricType, ConstantType>::RectangleAbstractValuation, typename ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation>;
+
             // Returns for each row the abstract valuation for this row
             // Note: the returned vector might be empty if row label generaion was disabled initially
-            std::vector<AbstractValuation> const& getRowLabels() const;
+            std::vector<RectangleAbstractValuation> const& getRowLabels() const;
             
         private:
             /*
@@ -143,7 +175,14 @@ namespace storm {
                         std::size_t operator()(FunctionValuation const& fv) const {
                             std::size_t seed = 0;
                             carl::hash_add(seed, fv.first);
-                            carl::hash_add(seed, fv.second.getHashValue());
+                            
+                            if (const RectangleAbstractValuation* rectValuation = boost::get<RectangleAbstractValuation>(&fv.second)) {
+                                carl::hash_add(seed, 0);
+                                carl::hash_add(seed, rectValuation->getHashValue());
+                            } else if (const BigStepAbstractValuation* bigStepValuation = boost::get<BigStepAbstractValuation>(&fv.second)) {
+                                carl::hash_add(seed, 1);
+                                carl::hash_add(seed, bigStepValuation->getHashValue());
+                            }
                             return seed;
                         }
                 };
@@ -155,9 +194,9 @@ namespace storm {
             FunctionValuationCollector functionValuationCollector;
     
             // Returns the 2^(variables.size()) vertices of the region
-            std::vector<AbstractValuation> getVerticesOfAbstractRegion(std::set<VariableType> const& variables) const;
+            std::vector<RectangleAbstractValuation> getVerticesOfAbstractRegion(std::set<VariableType> const& variables) const;
             
-            std::vector<AbstractValuation> rowLabels;
+            std::vector<RectangleAbstractValuation> rowLabels;
 
             std::vector<uint_fast64_t> oldToNewColumnIndexMapping; // Mapping from old to new columnIndex used for monotonicity
             std::vector<uint_fast64_t> rowGroupToStateNumber; // Mapping from new to old columnIndex used for monotonicity

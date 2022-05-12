@@ -22,6 +22,7 @@
 #include "storm/exceptions/UnexpectedException.h"
 #include "storm/exceptions/InvalidOperationException.h"
 #include "storm/exceptions/UncheckedRequirementException.h"
+#include "utility/logging.h"
 
 
 namespace storm {
@@ -421,6 +422,14 @@ namespace storm {
                 uint64_t rowOffset = matrix.getRowGroupIndices()[state];
                 uint64_t optimalChoice = schedulerChoices[state];
                 auto const& optimalChoiceVal = choiceValuations[rowOffset + optimalChoice];
+                
+                // auto* const& optimalChoiceVal = boost::get<typename storm::transformer::ParameterLifter<ValueType, ConstantType>::RectangleAbstractValuation>(&optimalChoiceValGeneric);
+                // // FIXME Currently skipped for big step transitions
+                // if (!optimalChoiceVal) {
+                //     STORM_LOG_WARN("Region split estimates not yet implemented for big-step transitions.");
+                //     continue;
+                // }
+
                 assert(optimalChoiceVal.getUnspecifiedParameters().empty());
                 stateResults.clear();
                 for (uint64_t row = rowOffset; row < matrix.getRowGroupIndices()[state + 1]; ++row) {
