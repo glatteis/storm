@@ -1,6 +1,8 @@
 #pragma once
 
 #include <carl/util/hash.h>
+#include <sys/types.h>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -87,7 +89,6 @@ namespace storm {
              *   will be set to either the lower/upper bound of the region or
              *   whether this is unspecified. The getConcreteValuation() function returns a rectangle
              * - big-step PLA transitions: There is only a single parameter, which is left unspecified.
-             *   The getConcreteValuation() function returns the vertices of the convex polygon
              */
             
             class RectangleAbstractValuation {
@@ -115,30 +116,37 @@ namespace storm {
             private:
                 std::set<VariableType> lowerPars, upperPars, unspecifiedPars;
             };
-
+            
             class BigStepAbstractValuation {
             public:
-                BigStepAbstractValuation() = default;
+                BigStepAbstractValuation(VariableType const parameter, std::vector<storm::RationalFunction> const transitions);
                 BigStepAbstractValuation(BigStepAbstractValuation const& other) = default;
                 bool operator==(BigStepAbstractValuation const& other) const;
                 
-                void setParameter(VariableType const& var);
-                void setTransitions(std::vector<storm::RationalFunction> const& transitions);
-
                 std::size_t getHashValue() const;
 
                 VariableType const& getParameter() const;
+                
+                uint_fast64_t getNumTransitions() const;
+                
+                std::vector<storm::RationalFunction> const& getTransitions() const;
+                
+                std::vector<std::pair<uint_fast64_t, uint_fast64_t>> const& getAsAndBs() const;
+                
+                std::vector<std::pair<ConstantType, ConstantType>> const& getMaxima() const;
 
-                /*!
-                 * Returns the concrete transitions given a region of the parameter.
-                 */
-                std::vector<CoefficientType> getConcreteTransitions(storm::storage::ParameterRegion<ParametricType> const& region) const;
             private:
-                VariableType parameter;
-                std::vector<storm::RationalFunction> const& transitions;
+                VariableType const parameter;
+                
+                // The following vectors are indexed by the same indices
+                std::vector<storm::RationalFunction> const transitions;
+                // Every transition of a bigStep valuation is p^a (1-p)^b - these are a and b
+                std::vector<std::pair<uint_fast64_t, uint_fast64_t>> asAndBs;
+                // Position and value of the maximum of each of the functions
+                std::vector<std::pair<ConstantType, ConstantType>> maxima;
             };
 
-            using AbstractValuation = boost::variant<typename ParameterLifter<ParametricType, ConstantType>::RectangleAbstractValuation, typename ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation>;
+            using AbstractValuation = boost::variant<typename ParameterLifter<ParametricType, ConstantType>::RectangleAbstractValuation, const typename ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation>;
 
             // Returns for each row the abstract valuation for this row
             // Note: the returned vector might be empty if row label generaion was disabled initially
@@ -162,13 +170,14 @@ namespace storm {
                  * Adds the provided function and valuation.
                  * Returns a reference to a placeholder in which the evaluation result will be written upon calling evaluateCollectedFunctions)
                  */
-                ConstantType& add(ParametricType const& function, AbstractValuation const& valuation);
+                ConstantType& addRectValuation(ParametricType const& function, RectangleAbstractValuation const& valuation);
+                std::vector<std::reference_wrapper<ConstantType>> addBigStepValuation(BigStepAbstractValuation const& valuation, uint_fast64_t numOfPlaceholders);
 
                 void evaluateCollectedFunctions(storm::storage::ParameterRegion<ParametricType> const& region, storm::solver::OptimizationDirection const& dirForUnspecifiedParameters);
                 
             private:
                 // Stores a function and a valuation. The valuation is stored as an index of the collectedValuations-vector.
-                typedef std::pair<ParametricType, AbstractValuation> FunctionValuation;
+                typedef std::pair<ParametricType, RectangleAbstractValuation> FunctionValuation;
 
                 class FuncValHash{
                     public:
@@ -176,25 +185,33 @@ namespace storm {
                             std::size_t seed = 0;
                             carl::hash_add(seed, fv.first);
                             
-                            if (const RectangleAbstractValuation* rectValuation = boost::get<RectangleAbstractValuation>(&fv.second)) {
-                                carl::hash_add(seed, 0);
-                                carl::hash_add(seed, rectValuation->getHashValue());
-                            } else if (const BigStepAbstractValuation* bigStepValuation = boost::get<BigStepAbstractValuation>(&fv.second)) {
-                                carl::hash_add(seed, 1);
-                                carl::hash_add(seed, bigStepValuation->getHashValue());
-                            }
+                            carl::hash_add(seed, 0);
+                            carl::hash_add(seed, fv.second.getHashValue());
                             return seed;
+                        }
+                };
+                
+                class BigStepHash{
+                    public:
+                        std::size_t operator()(BigStepAbstractValuation const& bigStep) const {
+                            return bigStep.getHashValue();
                         }
                 };
 
                 // Stores the collected functions with the valuations together with a placeholder for the result.
-                std::unordered_map<FunctionValuation, ConstantType, FuncValHash> collectedFunctions;
+                std::unordered_map<FunctionValuation, ConstantType, FuncValHash> collectedRectangleValuations;
+
+
+                // POSSIBLE OPTIMIZATION currently transitions are sorted by occurence in the row
+                // If we need to evaluate two equal BigStep transitions with a different order of polynomaials they are evaluated
+                // seperately 
+                std::unordered_map<BigStepAbstractValuation, std::vector<std::reference_wrapper<ConstantType>>, BigStepHash> collectedBigStepValuations;
             };
             
             FunctionValuationCollector functionValuationCollector;
     
             // Returns the 2^(variables.size()) vertices of the region
-            std::vector<RectangleAbstractValuation> getVerticesOfAbstractRegion(std::set<VariableType> const& variables) const;
+            std::vector<RectangleAbstractValuation> getRectangleVertices(std::set<VariableType> const& variables) const;
             
             std::vector<RectangleAbstractValuation> rowLabels;
 

@@ -536,7 +536,8 @@ namespace storm {
         
         template <typename SparseModelType, typename ConstantType>
         bool SparseDtmcParameterLiftingModelChecker<SparseModelType, ConstantType>::isRegionSplitEstimateSupported() const {
-            return regionSplitEstimationsEnabled && !stepBound;
+            return false;
+            // return regionSplitEstimationsEnabled && !stepBound;
         }
         
         template <typename SparseModelType, typename ConstantType>

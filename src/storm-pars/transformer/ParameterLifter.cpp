@@ -1,5 +1,20 @@
 #include "storm-pars/transformer/ParameterLifter.h"
+#include <carl/core/DivisionResult.h>
+#include <carl/core/Monomial.h>
+#include <carl/core/PolynomialFactorizationPair.h>
+#include <carl/core/Term.h>
+#include <carl/core/Variable.h>
+#include <carl/core/polynomialfunctions/Factorization.h>
+#include <carl/numbers/adaption_native/operations.h>
+#include <storm_wrapper.h>
+#include <cstdint>
+#include <memory>
+#include <set>
+#include <utility>
+#include <vector>
 
+#include "storage/geometry/NativePolytope.h"
+#include "storage/geometry/Polytope.h"
 #include "storm/adapters/RationalFunctionAdapter.h"
 #include "storm/utility/vector.h"
 #include "storm/exceptions/UnexpectedException.h"
@@ -7,6 +22,7 @@
 #include "utility/constants.h"
 #include "utility/logging.h"
 #include "utility/macros.h"
+#include "storm/storage/geometry/Halfspace.h"
 
 namespace storm {
     namespace transformer {
@@ -37,6 +53,8 @@ namespace storm {
             rowGroupToStateNumber = std::vector<uint_fast64_t>();
             uint_fast64_t newRowIndex = 0;
             uint_fast64_t countNonParam = 0;
+            
+            std::cout << pMatrix << std::endl;
             for (auto const& rowIndex : selectedRows) {
                 builder.newRowGroup(newRowIndex);
                 rowGroupToStateNumber.push_back(rowIndex);
@@ -77,71 +95,124 @@ namespace storm {
 
                 const bool linearTransitions = onlyLinearTransitions(pMatrix.getRow(rowIndex));
                 
+                auto countPlaceHolders = 0;
                 // Compute the (abstract) valuation for each row
                 // Only linear transitions? Then we can do the standard PLA thing - make a rectangle! (First branch)
                 if (linearTransitions) {
-                    // The vertices of the abstract region is the rectangle
-                    auto rowValuations = getVerticesOfAbstractRegion(occurringVariables);
-                    for (auto const& val: rowValuations) {
-                        if (generateRowLabels) {
-                            rowLabels.push_back(val);
-                        }
+                    std::vector<RectangleAbstractValuation> rowValuations;
+                    
 
-                        auto countPlaceHolders = 0;
+                    // The vertices of the abstract region is the rectangle
+                    for (auto const& vertex : getRectangleVertices(occurringVariables)) {
+                        rowValuations.push_back(vertex);
+                    }
+                    
+
+                    for (auto const& val : rowValuations) {
+                        if (generateRowLabels) {
+                            // FIXME Only storing rectangle valuations as row labels for now
+                            rowLabels.push_back(val);
+                          }
+
                         
                         // Insert matrix entries for each valuation. For non-constant entries, a dummy value is inserted and the function and the valuation are collected.
                         // The placeholder for the collected function/valuation are stored in the matrixAssignment. The matrixAssignment is completed after the matrix is finished
+
+                        // Rectangle valuation -> You get the placeholder directly from the local rectangle valuation
                         for (auto const& entry: pMatrix.getRow(rowIndex)) {
                             if(selectedColumns.get(entry.getColumn())) {
                                 if(storm::utility::isConstant(entry.getValue())) {
                                     builder.addNextValue(newRowIndex, oldToNewColumnIndexMapping[entry.getColumn()], storm::utility::convertNumber<ConstantType>(entry.getValue()));
-                                } else if (linearTransitions) {
-                                    // Do the standard PLA thing - 
+                                } else {
                                     builder.addNextValue(newRowIndex, oldToNewColumnIndexMapping[entry.getColumn()], storm::utility::one<ConstantType>());
-                                    ConstantType& placeholder = functionValuationCollector.add(entry.getValue(), val);
+                                    ConstantType& placeholder = functionValuationCollector.addRectValuation(entry.getValue(), val);
                                     matrixAssignment.push_back(std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType&>(typename storm::storage::SparseMatrix<ConstantType>::iterator(), placeholder));
                                     countPlaceHolders++;
-                                } else {
-                                    
                                 }
                             }
                         }
-                        
                         //Insert the vector entry for this row
-                        if(storm::utility::isConstant(pVectorEntry)) {
+                        if (storm::utility::isConstant(pVectorEntry)) {
                             vector.push_back(storm::utility::convertNumber<ConstantType>(pVectorEntry));
                         } else {
                             vector.push_back(storm::utility::one<ConstantType>());
                             RectangleAbstractValuation vectorVal(val);
                             for(auto const& vectorVar : vectorEntryVariables) {
+
                                 if (occurringVariables.find(vectorVar) == occurringVariables.end()) {
                                     assert(!generateRowLabels);
                                     vectorVal.addParameterUnspecified(vectorVar);
                                 }
                             }
-                            ConstantType& placeholder = functionValuationCollector.add(pVectorEntry, vectorVal);
+                            ConstantType& placeholder = functionValuationCollector.addRectValuation(pVectorEntry, vectorVal);
                             vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
                         }
-
                         ++newRowIndex;
                     }
-                    if (useMonotonicityInFuture) {
-                        // Save the occuringVariables of a state, needed if we want to use monotonicity
-                        for (auto& var : occurringVariables) {
-                            occuringStatesAtVariable[var].insert(rowIndex);
-                        }
-                        occurringVariablesAtState[rowIndex] = std::move(occurringVariables);
-                    }
                 } else {
-                    // Non-linear transitions? We do big-step lifting. We work out constraints and make a convex polygon
-                    STORM_LOG_ERROR_COND(occurringVariables.size() == 1, "Big-Step Lifting PLA only supports univariate transitions.");
+                    // Big-step valuation -> get all vertices from the valuation and insert them in some order
+                    STORM_LOG_ERROR_COND(occurringVariables.size() == 1, "Transitions need to be univariate or linear.");
+                    std::vector<RationalFunction> functions;
+                    for (auto const& entry : pMatrix.getRow(rowIndex)) {
+                        if (!entry.getValue().isZero()) {
+                            functions.push_back(entry.getValue());
+                        }
+                    }
+                    if (!storm::utility::isConstant(pVectorEntry)) {
+                        functions.push_back(pVectorEntry);
+                    }
                     
+                    auto val = BigStepAbstractValuation(*occurringVariables.begin(), functions);
                     
+                    // Create 2^(n+1) vertices
+                    std::size_t const numOfVertices = std::pow(2, val.getNumTransitions() + 1);
+                    
+                    // A BigStep valuation has at most numOfVertices rows with functions.size() columns
+                    // This means we have numOfVertices * functions.size() ConstantType references 
+                    auto placeholders = functionValuationCollector.addBigStepValuation(val, numOfVertices * functions.size());
+                    auto placeholdersIterator = placeholders.begin();
+
+                    for (uint_fast64_t i = 0; i < numOfVertices; i++) {
+                        for (auto const& entry: pMatrix.getRow(rowIndex)) {
+                            if(selectedColumns.get(entry.getColumn())) {
+                                if(storm::utility::isConstant(entry.getValue())) {
+                                    STORM_LOG_ERROR("Constant values in big-step valuations currently not supported.");
+                                } else {
+                                    ConstantType& placeholder = *placeholdersIterator;
+                                    builder.addNextValue(newRowIndex, oldToNewColumnIndexMapping[entry.getColumn()], storm::utility::one<ConstantType>());
+                                    matrixAssignment.push_back(std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType&>(typename storm::storage::SparseMatrix<ConstantType>::iterator(), placeholder));
+                                    countPlaceHolders++;
+                                    placeholdersIterator++;
+                                }
+                            }
+                        }
+                        // Insert the vector entry for this row
+                        if (storm::utility::isConstant(pVectorEntry)) {
+                            vector.push_back(storm::utility::convertNumber<ConstantType>(pVectorEntry));
+                        } else {
+                            ConstantType& placeholder = *placeholdersIterator;
+                            vector.push_back(storm::utility::one<ConstantType>());
+                            vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
+                            countPlaceHolders++;
+                        }
+                        ++newRowIndex;
+                    }
+
+                }
+
+                    
+                if (useMonotonicityInFuture) {
+                    // Save the occuringVariables of a state, needed if we want to use monotonicity
+                    for (auto& var : occurringVariables) {
+                        occuringStatesAtVariable[var].insert(rowIndex);
+                    }
+                    occurringVariablesAtState[rowIndex] = std::move(occurringVariables);
                 }
             }
 
             // Matrix and vector are now filled with constant results from constant functions and place holders for non-constant functions.
             matrix = builder.build(newRowIndex);
+            std::cout << matrix << std::endl;
             vector.shrink_to_fit();
             matrixAssignment.shrink_to_fit();
             vectorAssignment.shrink_to_fit();
@@ -186,7 +257,9 @@ namespace storm {
 
             for (auto &assignment : vectorAssignment) {
                 *assignment.first = assignment.second;
+            
             }
+            std::cout << matrix << std::endl;
         }
 
         template<typename ParametricType, typename ConstantType>
@@ -239,7 +312,7 @@ namespace storm {
         }
     
         template<typename ParametricType, typename ConstantType>
-        std::vector<typename ParameterLifter<ParametricType, ConstantType>::RectangleAbstractValuation> ParameterLifter<ParametricType, ConstantType>::getVerticesOfAbstractRegion(std::set<VariableType> const& variables) const {
+        std::vector<typename ParameterLifter<ParametricType, ConstantType>::RectangleAbstractValuation> ParameterLifter<ParametricType, ConstantType>::getRectangleVertices(std::set<VariableType> const& variables) const {
             std::size_t const numOfVertices = std::pow(2, variables.size());
             std::vector<RectangleAbstractValuation> result(numOfVertices);
             
@@ -259,8 +332,6 @@ namespace storm {
             }
             return result;
         }
-        
-        
 
         template<typename ParametricType, typename ConstantType>
         const std::vector<std::set<typename ParameterLifter<ParametricType, ConstantType>::VariableType>> & ParameterLifter<ParametricType, ConstantType>::getOccurringVariablesAtState() const {
@@ -352,10 +423,50 @@ namespace storm {
             }
             return result;
         }
+
+        template<typename ParametricType, typename ConstantType>
+        ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::BigStepAbstractValuation(VariableType const parameter, std::vector<storm::RationalFunction> const transitions): parameter(parameter), transitions(transitions) {
+            for (uint_fast64_t i = 0; i < transitions.size(); i++) {
+                RationalFunction transition = transitions[i];
+                std::set<VariableType> occurringVariables;
+                storm::utility::parametric::gatherOccurringVariables(transition, occurringVariables);
+
+                STORM_LOG_ERROR_COND(occurringVariables.size() == 1, "Only univariate big-step transitions are supported");
+                STORM_LOG_ERROR_COND(transition.denominator().isOne(), "(Currently) only p^a * (1-p)^b big-step transitions supported");
+                
+                auto p = *occurringVariables.begin();
+                auto cache = transition.nominatorAsPolynomial().pCache();
+                
+                auto nominator = transition.nominator();
+                auto parameter = RawPolynomial(p);
+                auto oneMinusParameter = RawPolynomial(1) - parameter;
+                
+                auto factorization = carl::factorization(RawPolynomial(nominator));
+                
+                uint_fast64_t a = 0;
+                uint_fast64_t b = 0;
+                for (auto const& element : factorization) {
+                    if (element.first == parameter) {
+                        a = element.second;       
+                    } else if (element.first == oneMinusParameter || element.first == -oneMinusParameter) {
+                        b = element.second;
+                    }
+                }
+                
+                // Polynomial is p^a * (1-p)^b
+                
+                // The maximum lies at a / (a + b), so compute that
+                CoefficientType maximumCoeff = utility::convertNumber<CoefficientType>(a) / utility::convertNumber<CoefficientType>(a + b);
+                ConstantType maximum = utility::convertNumber<ConstantType>(a) / utility::convertNumber<ConstantType>(a + b);
+                
+                this->asAndBs.push_back(std::make_pair(a, b));
+                std::map<VariableType, CoefficientType> substitution;
+                substitution.emplace(p, maximumCoeff);
+
+                this->maxima.push_back(std::make_pair(maximum, utility::convertNumber<ConstantType>(transition.evaluate(substitution))));
+            }
+        }
         
-
-
-
         template<typename ParametricType, typename ConstantType>
         bool ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::operator==(BigStepAbstractValuation const& other) const {
             return this->parameter == other.parameter && this->transitions == other.transitions;
@@ -364,6 +475,26 @@ namespace storm {
         template<typename ParametricType, typename ConstantType>
         typename ParameterLifter<ParametricType, ConstantType>::VariableType const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getParameter() const {
             return parameter;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        uint_fast64_t ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getNumTransitions() const {
+            return this->transitions.size();
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<RationalFunction> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getTransitions() const {
+            return this->transitions;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<std::pair<uint_fast64_t, uint_fast64_t>> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getAsAndBs() const {
+            return this->asAndBs;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<std::pair<ConstantType, ConstantType>> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getMaxima() const {
+            return this->maxima;
         }
 
         template<typename ParametricType, typename ConstantType>
@@ -377,48 +508,163 @@ namespace storm {
         }
         
         template<typename ParametricType, typename ConstantType>
-        ConstantType& ParameterLifter<ParametricType, ConstantType>::FunctionValuationCollector::add(ParametricType const& function, AbstractValuation const& valuation) {
+        ConstantType& ParameterLifter<ParametricType, ConstantType>::FunctionValuationCollector::addRectValuation(ParametricType const& function, RectangleAbstractValuation const& valuation) {
             ParametricType simplifiedFunction = function;
             storm::utility::simplify(simplifiedFunction);
             std::set<VariableType> variablesInFunction;
             storm::utility::parametric::gatherOccurringVariables(simplifiedFunction, variablesInFunction);
             
-            
-            // insert the function and the valuation
-            //Note that references to elements of an unordered map remain valid after calling unordered_map::insert.
-            if (const RectangleAbstractValuation* rectValuation = boost::get<RectangleAbstractValuation>(&valuation)) {
-                auto simplifiedValuation = rectValuation->getSubValuation(variablesInFunction);
-                auto insertionRes = collectedFunctions.insert(std::pair<FunctionValuation, ConstantType>(FunctionValuation(std::move(simplifiedFunction), std::move(simplifiedValuation)), storm::utility::one<ConstantType>()));
-                return insertionRes.first->second;
-            } else {
-                const BigStepAbstractValuation* bigStepValuation = boost::get<BigStepAbstractValuation>(&valuation);
-                auto insertionRes = collectedFunctions.insert(std::pair<FunctionValuation, ConstantType>(FunctionValuation(std::move(simplifiedFunction), std::move(*bigStepValuation)), storm::utility::one<ConstantType>()));
-                return insertionRes.first->second;
+            auto simplifiedValuation = valuation.getSubValuation(variablesInFunction);
+            // If the given FunctionValuation already exists in the map, this means there is already a ConstantType reference
+            // that needs to be filled with the value from the valuation. If this reference prevents insertion, it is returned
+            // in insertionRes.first->second and will then be inserted into the matrix assignment. This causes the function to
+            // only be calculated once, the result written to the ConstantType reference, and the ConstantType reference is then
+            // contained in both places where this valuation occurs.
+            auto insertionRes = collectedRectangleValuations.insert(std::pair<FunctionValuation, ConstantType>(FunctionValuation(std::move(simplifiedFunction), std::move(simplifiedValuation)), storm::utility::one<ConstantType>()));
+            return insertionRes.first->second;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<std::reference_wrapper<ConstantType>> ParameterLifter<ParametricType, ConstantType>::FunctionValuationCollector::addBigStepValuation(BigStepAbstractValuation const& valuation, uint_fast64_t numOfPlaceholders) {
+            std::vector<std::reference_wrapper<ConstantType>> vertices;
+            for (uint_fast64_t i = 0; i < numOfPlaceholders; i++) {
+                ConstantType c = utility::one<ConstantType>();
+                vertices.push_back(c);
             }
+            auto insertionRes = collectedBigStepValuations.insert(std::make_pair(valuation, vertices));
+            return insertionRes.first->second;
         }
     
         template<typename ParametricType, typename ConstantType>
         void ParameterLifter<ParametricType, ConstantType>::FunctionValuationCollector::evaluateCollectedFunctions(storm::storage::ParameterRegion<ParametricType> const& region, storm::solver::OptimizationDirection const& dirForUnspecifiedParameters) {
-            for (auto &collectedFunctionValuationPlaceholder : collectedFunctions) {
+            // Evaluate rectangle transitions
+            for (auto &collectedFunctionValuationPlaceholder : collectedRectangleValuations) {
                 ParametricType const &function = collectedFunctionValuationPlaceholder.first.first;
-                AbstractValuation const &abstrValuation = collectedFunctionValuationPlaceholder.first.second;
+                RectangleAbstractValuation const &abstrValuation = collectedFunctionValuationPlaceholder.first.second;
                 ConstantType &placeholder = collectedFunctionValuationPlaceholder.second;
 
-                if (const RectangleAbstractValuation* rectValuation = boost::get<RectangleAbstractValuation>(&abstrValuation)) {
-                    auto concreteValuations = rectValuation->getConcreteValuations(region);
-                    auto concreteValuationIt = concreteValuations.begin();
-                    placeholder = storm::utility::convertNumber<ConstantType>(storm::utility::parametric::evaluate(function, *concreteValuationIt));
-                    for (++concreteValuationIt; concreteValuationIt != concreteValuations.end(); ++concreteValuationIt) {
-                        ConstantType currentResult = storm::utility::convertNumber<ConstantType>(storm::utility::parametric::evaluate(function, *concreteValuationIt));
-                        if (storm::solver::minimize(dirForUnspecifiedParameters)) {
-                            placeholder = std::min(placeholder, currentResult);
-                        } else {
-                            placeholder = std::max(placeholder, currentResult);
-                        }
+                auto concreteValuations = abstrValuation.getConcreteValuations(region);
+                auto concreteValuationIt = concreteValuations.begin();
+                placeholder = storm::utility::convertNumber<ConstantType>(storm::utility::parametric::evaluate(function, *concreteValuationIt));
+                for (++concreteValuationIt; concreteValuationIt != concreteValuations.end(); ++concreteValuationIt) {
+                    ConstantType currentResult = storm::utility::convertNumber<ConstantType>(storm::utility::parametric::evaluate(function, *concreteValuationIt));
+                    if (storm::solver::minimize(dirForUnspecifiedParameters)) {
+                        placeholder = std::min(placeholder, currentResult);
+                    } else {
+                        placeholder = std::max(placeholder, currentResult);
                     }
-                } else if (const BigStepAbstractValuation* bigStepValuation = boost::get<BigStepAbstractValuation>(&abstrValuation)) {
                 }
             }
+            for (auto &collectedBigStepPlaceholders : collectedBigStepValuations) {
+                BigStepAbstractValuation bigStepTransition = collectedBigStepPlaceholders.first;
+                std::vector<std::reference_wrapper<ConstantType>> placeholders = collectedBigStepPlaceholders.second;
+                
+                // Compute lower bound and upper bound of function for every transition
+                std::vector<ConstantType> lowerBounds(bigStepTransition.getNumTransitions());
+                std::vector<ConstantType> upperBounds(bigStepTransition.getNumTransitions());
+                
+                auto maxima = bigStepTransition.getMaxima();
+                auto transitions = bigStepTransition.getTransitions();
+                auto p = bigStepTransition.getParameter();
+                
+                // The functions we consider are always p^a * (1-p)^b.
+                // These always have a maximum at a / (a + b), are monotone increasing before and monotone decreasing after.
+                // So we are using a case distinction to compute the lower and upper bounds.
+                
+                for (uint_fast64_t i = 0; i < bigStepTransition.getNumTransitions(); i++) {
+                    CoefficientType lowerPCoeff = region.getLowerBoundary(p);
+                    CoefficientType upperPCoeff = region.getUpperBoundary(p);
+                    ConstantType lowerP = utility::convertNumber<ConstantType>(region.getLowerBoundary(p));
+                    ConstantType upperP = utility::convertNumber<ConstantType>(region.getUpperBoundary(p));
+                    
+                    auto f = transitions[i];
+                    
+                    // Compute function values at left and right ends 
+                    std::map<VariableType, CoefficientType> substitution;
+                    substitution[p] = lowerPCoeff;
+                    auto left = utility::convertNumber<ConstantType>(f.evaluate(substitution));
+                    substitution[p] = upperPCoeff;
+                    auto right = utility::convertNumber<ConstantType>(f.evaluate(substitution));
+
+                    if (lowerP <= maxima[i].first && upperP >= maxima[i].first) {
+                        // Case 1: The valuation is around the maximum of the function.
+                        // Lower bound is the minimum of left and right
+                        lowerBounds[i] = utility::min(left, right);
+                        // Upper bound is easy
+                        upperBounds[i] = maxima[i].second;
+                    } else if (lowerP > maxima[i].first) {
+                        // Case 2: The valuation is on the right of the maximum => monotone decreasing
+                        lowerBounds[i] = right;
+                        upperBounds[i] = left;
+                    } else if (upperP < maxima[i].first) {
+                        // Case 3: The valuation is on the left of the maximum => monotone increasing
+                        lowerBounds[i] = left;
+                        upperBounds[i] = right;
+                    }
+                }
+                
+                std::cout << "aa" << std::endl;
+                // Build the polytope
+
+                std::vector<storage::geometry::Halfspace<ConstantType>> halfspaces;
+                // We assign new variables to the transitions: x_1, x_2, x_3, ..., x_n-1
+                // The last transition has the value 1 - x_1 - x_2 - ... - x_n-1
+                // Populate constraints for variables
+                for (uint_fast64_t i = 0; i < bigStepTransition.getNumTransitions() - 1; i++) {
+                    std::vector<ConstantType> normalVectorLower(bigStepTransition.getNumTransitions() - 1);
+                    std::vector<ConstantType> normalVectorUpper(bigStepTransition.getNumTransitions() - 1);
+                    
+                    normalVectorLower[i] = -utility::one<ConstantType>();
+                    normalVectorUpper[i] = utility::one<ConstantType>();
+                    
+                    storage::geometry::Halfspace<ConstantType> lowerHalfspace(normalVectorLower, -lowerBounds[i]);
+                    storage::geometry::Halfspace<ConstantType> upperHalfspace(normalVectorUpper, upperBounds[i]);
+                    
+                    halfspaces.push_back(lowerHalfspace);
+                    halfspaces.push_back(upperHalfspace);
+                }
+                
+                std::vector<ConstantType> normalVectorLowerLast(bigStepTransition.getNumTransitions() - 1);
+                std::vector<ConstantType> normalVectorUpperLast(bigStepTransition.getNumTransitions() - 1);
+                for (uint_fast64_t i = 0; i < bigStepTransition.getNumTransitions() - 1; i++) {
+                    normalVectorLowerLast[i] = utility::one<ConstantType>();
+                    normalVectorUpperLast[i] = -utility::one<ConstantType>();
+                }
+                storage::geometry::Halfspace<ConstantType> lowerHalfspaceLast(normalVectorLowerLast, -lowerBounds[bigStepTransition.getNumTransitions() - 1] + utility::one<ConstantType>());
+                storage::geometry::Halfspace<ConstantType> upperHalfspaceLast(normalVectorUpperLast, upperBounds[bigStepTransition.getNumTransitions() - 1] - utility::one<ConstantType>());
+
+                halfspaces.push_back(lowerHalfspaceLast);
+                halfspaces.push_back(upperHalfspaceLast);
+                
+                auto polytope = storage::geometry::NativePolytope<ConstantType>(halfspaces);
+
+                auto vertices = polytope.getVertices();
+                
+                // for (auto const& vertex : polytope.getVertices()) {
+                //     for (auto const& element : vertex) {
+                //         std::cout << element << " ";
+                //     }
+                //     std::cout << std::endl;
+                // }
+                
+                // std::cout << std::endl;
+                
+                // Modulo through the vertices so that we populate every row
+                for (uint_fast64_t row = 0; row < placeholders.size() / bigStepTransition.getNumTransitions(); row++) {
+                    auto vertex = vertices[row % vertices.size()];
+                    
+                    ConstantType lastValue = 1;
+                    for (uint_fast64_t i = 0; i < vertex.size(); i++) {
+                        placeholders[row * bigStepTransition.getNumTransitions() + i] = vertex[i];
+                        lastValue -= vertex[i];
+                        std::cout << matrix << std::endl;
+                    }
+                    placeholders[row * bigStepTransition.getNumTransitions() + vertex.size()] = lastValue;
+                }
+                
+            }
+
+            
         }
         
         template class ParameterLifter<storm::RationalFunction, double>;
