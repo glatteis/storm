@@ -8,6 +8,7 @@
 #include <carl/numbers/adaption_native/operations.h>
 #include <storm_wrapper.h>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <set>
 #include <utility>
@@ -526,13 +527,10 @@ namespace storm {
 
         template<typename ParametricType, typename ConstantType>
         std::vector<std::reference_wrapper<ConstantType>> ParameterLifter<ParametricType, ConstantType>::FunctionValuationCollector::addBigStepValuation(BigStepAbstractValuation const& valuation, uint_fast64_t numOfPlaceholders) {
-            std::vector<std::reference_wrapper<ConstantType>> vertices;
-            for (uint_fast64_t i = 0; i < numOfPlaceholders; i++) {
-                ConstantType c = utility::one<ConstantType>();
-                vertices.push_back(c);
-            }
-            auto insertionRes = collectedBigStepValuations.insert(std::make_pair(valuation, vertices));
-            return insertionRes.first->second;
+            std::vector<ConstantType> vertices(numOfPlaceholders, ConstantType(1));
+            std::vector<std::reference_wrapper<ConstantType>> vertexReferences(vertices.begin(), vertices.end());
+            auto insertionRes = collectedBigStepValuations.insert(std::make_pair(valuation, std::make_pair(std::move(vertices), std::move(vertexReferences))));
+            return insertionRes.first->second.second;
         }
     
         template<typename ParametricType, typename ConstantType>
@@ -557,7 +555,7 @@ namespace storm {
             }
             for (auto &collectedBigStepPlaceholders : collectedBigStepValuations) {
                 BigStepAbstractValuation bigStepTransition = collectedBigStepPlaceholders.first;
-                std::vector<std::reference_wrapper<ConstantType>> placeholders = collectedBigStepPlaceholders.second;
+                std::vector<std::reference_wrapper<ConstantType>> placeholders = collectedBigStepPlaceholders.second.second;
                 
                 // Compute lower bound and upper bound of function for every transition
                 std::vector<ConstantType> lowerBounds(bigStepTransition.getNumTransitions());
@@ -655,11 +653,12 @@ namespace storm {
                     
                     ConstantType lastValue = 1;
                     for (uint_fast64_t i = 0; i < vertex.size(); i++) {
-                        placeholders[row * bigStepTransition.getNumTransitions() + i] = vertex[i];
+                        ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + i];
+                        reference = vertex[i];
                         lastValue -= vertex[i];
-                        std::cout << matrix << std::endl;
                     }
-                    placeholders[row * bigStepTransition.getNumTransitions() + vertex.size()] = lastValue;
+                    ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + vertex.size()];
+                    reference = lastValue;
                 }
                 
             }

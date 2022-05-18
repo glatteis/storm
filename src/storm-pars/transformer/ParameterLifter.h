@@ -205,7 +205,7 @@ namespace storm {
                 // POSSIBLE OPTIMIZATION currently transitions are sorted by occurence in the row
                 // If we need to evaluate two equal BigStep transitions with a different order of polynomaials they are evaluated
                 // seperately 
-                std::unordered_map<BigStepAbstractValuation, std::vector<std::reference_wrapper<ConstantType>>, BigStepHash> collectedBigStepValuations;
+                std::unordered_map<BigStepAbstractValuation, std::pair<std::vector<ConstantType>, std::vector<std::reference_wrapper<ConstantType>>>, BigStepHash> collectedBigStepValuations;
             };
             
             FunctionValuationCollector functionValuationCollector;
