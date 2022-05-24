@@ -4,10 +4,12 @@
 #include <sys/types.h>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <unordered_map>
 #include <set>
 
+#include "adapters/RationalFunctionAdapter.h"
 #include "storm-pars/storage/ParameterRegion.h"
 #include "storm-pars/utility/parametric.h"
 #include "storm/storage/BitVector.h"
@@ -130,18 +132,25 @@ namespace storm {
                 uint_fast64_t getNumTransitions() const;
                 
                 std::vector<storm::RationalFunction> const& getTransitions() const;
+
+                std::vector<std::pair<ConstantType, ConstantType>> const& getConstantsAndOffsets() const;
                 
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> const& getAsAndBs() const;
                 
                 std::vector<std::pair<ConstantType, ConstantType>> const& getMaxima() const;
+                
+                
 
             private:
                 VariableType const parameter;
+                
+                boost::optional<std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>>> tryDecomposing(RawPolynomial polynomial, bool firstIteration);
                 
                 // The following vectors are indexed by the same indices
                 std::vector<storm::RationalFunction> const transitions;
                 // Every transition of a bigStep valuation is p^a (1-p)^b - these are a and b
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> asAndBs;
+                std::vector<std::pair<ConstantType, ConstantType>> constantsAndOffsets;
                 // Position and value of the maximum of each of the functions
                 std::vector<std::pair<ConstantType, ConstantType>> maxima;
             };
@@ -227,6 +236,7 @@ namespace storm {
             // Used for monotonicity in sparsedtmcparameterlifter
             std::vector<std::set<VariableType>> occurringVariablesAtState;
             std::map<VariableType, std::set<uint_fast64_t>> occuringStatesAtVariable;
+            
         };
 
     }

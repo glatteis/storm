@@ -1,6 +1,7 @@
 #include "storm-pars/transformer/ParameterLifter.h"
 #include <carl/core/DivisionResult.h>
 #include <carl/core/Monomial.h>
+#include <carl/core/MultivariatePolynomial.h>
 #include <carl/core/PolynomialFactorizationPair.h>
 #include <carl/core/Term.h>
 #include <carl/core/Variable.h>
@@ -55,7 +56,13 @@ namespace storm {
             uint_fast64_t newRowIndex = 0;
             uint_fast64_t countNonParam = 0;
             
-            std::cout << pMatrix << std::endl;
+            // std::cout << pMatrix << std::endl;
+            
+            // for (auto const& entry : pVector) {
+            //     std::cout << entry << " ";
+            // }
+            // std::cout << std::endl;
+
             for (auto const& rowIndex : selectedRows) {
                 builder.newRowGroup(newRowIndex);
                 rowGroupToStateNumber.push_back(rowIndex);
@@ -110,7 +117,7 @@ namespace storm {
                     
 
                     for (auto const& val : rowValuations) {
-                        if (generateRowLabels) {
+                        if (generateRowLabels && !occurringVariables.empty()) {
                             // FIXME Only storing rectangle valuations as row labels for now
                             rowLabels.push_back(val);
                           }
@@ -154,14 +161,15 @@ namespace storm {
                     // Big-step valuation -> get all vertices from the valuation and insert them in some order
                     STORM_LOG_ERROR_COND(occurringVariables.size() == 1, "Transitions need to be univariate or linear.");
                     std::vector<RationalFunction> functions;
+                    // std::cout << pMatrix << std::endl;
                     for (auto const& entry : pMatrix.getRow(rowIndex)) {
                         if (!entry.getValue().isZero()) {
                             functions.push_back(entry.getValue());
                         }
                     }
-                    if (!storm::utility::isConstant(pVectorEntry)) {
-                        functions.push_back(pVectorEntry);
-                    }
+                    // if (!storm::utility::isConstant(pVectorEntry)) {
+                    //     functions.push_back(pVectorEntry);
+                    // }
                     
                     auto val = BigStepAbstractValuation(*occurringVariables.begin(), functions);
                     
@@ -184,6 +192,12 @@ namespace storm {
                                     matrixAssignment.push_back(std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType&>(typename storm::storage::SparseMatrix<ConstantType>::iterator(), placeholder));
                                     countPlaceHolders++;
                                     placeholdersIterator++;
+                                    
+                                    if (entry.getValue() == pVectorEntry) {
+                                        vector.push_back(storm::utility::one<ConstantType>());
+                                        vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
+                                        countPlaceHolders++;
+                                    }
                                 }
                             }
                         }
@@ -191,10 +205,10 @@ namespace storm {
                         if (storm::utility::isConstant(pVectorEntry)) {
                             vector.push_back(storm::utility::convertNumber<ConstantType>(pVectorEntry));
                         } else {
-                            ConstantType& placeholder = *placeholdersIterator;
-                            vector.push_back(storm::utility::one<ConstantType>());
-                            vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
-                            countPlaceHolders++;
+                            // ConstantType& placeholder = *placeholdersIterator;
+                            // vector.push_back(storm::utility::one<ConstantType>());
+                            // vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
+                            // countPlaceHolders++;
                         }
                         ++newRowIndex;
                     }
@@ -213,7 +227,7 @@ namespace storm {
 
             // Matrix and vector are now filled with constant results from constant functions and place holders for non-constant functions.
             matrix = builder.build(newRowIndex);
-            std::cout << matrix << std::endl;
+            // std::cout << matrix << std::endl;
             vector.shrink_to_fit();
             matrixAssignment.shrink_to_fit();
             vectorAssignment.shrink_to_fit();
@@ -260,7 +274,7 @@ namespace storm {
                 *assignment.first = assignment.second;
             
             }
-            std::cout << matrix << std::endl;
+            // std::cout << matrix << std::endl;
         }
 
         template<typename ParametricType, typename ConstantType>
@@ -433,39 +447,147 @@ namespace storm {
                 storm::utility::parametric::gatherOccurringVariables(transition, occurringVariables);
 
                 STORM_LOG_ERROR_COND(occurringVariables.size() == 1, "Only univariate big-step transitions are supported");
-                STORM_LOG_ERROR_COND(transition.denominator().isOne(), "(Currently) only p^a * (1-p)^b big-step transitions supported");
+                STORM_LOG_ERROR_COND(transition.denominator().isConstant(), "(Currently) only c_1 * p^a * (1-p)^b + c_2 big-step transitions supported");
+                // 
+            
+                transition.simplify();
+                auto constantPart = transition.constantPart();
+                std::cout << transition << std::endl;
+                std::cout << constantPart << std::endl;
+
+                CoefficientType denominator = transition.denominator().constantPart();
+                ConstantType constantDenom = utility::convertNumber<ConstantType>(denominator);
+                
+                std::cout << constantDenom << std::endl;
+
+                auto nominator = RawPolynomial(transition.nominator());
                 
                 auto p = *occurringVariables.begin();
-                auto cache = transition.nominatorAsPolynomial().pCache();
                 
-                auto nominator = transition.nominator();
-                auto parameter = RawPolynomial(p);
-                auto oneMinusParameter = RawPolynomial(1) - parameter;
+
                 
-                auto factorization = carl::factorization(RawPolynomial(nominator));
+                // auto result1 = nominator.divideBy(parameter);
+                // auto result2 = nominator.divideBy(oneMinusParameter);
                 
-                uint_fast64_t a = 0;
-                uint_fast64_t b = 0;
-                for (auto const& element : factorization) {
-                    if (element.first == parameter) {
-                        a = element.second;       
-                    } else if (element.first == oneMinusParameter || element.first == -oneMinusParameter) {
-                        b = element.second;
-                    }
+                // std::cout << "p: " << result1.quotient << ", " << result1.remainder << std::endl;
+                // std::cout << "1-p: " << result2.quotient << ", " << result2.remainder << std::endl;
+
+                RawPolynomial currentNominator = nominator;
+                
+                // std::cout << result.quotient << ", " << result.remainder << std::endl;
+
+
+                // ConstantType offset = utility::zero<ConstantType>();
+                // if (nominator.trailingTerm().isConstant()) {
+                //     auto coeff = nominator.trailingTerm().coeff();
+                //     offset = utility::convertNumber<ConstantType>(coeff / denominator);
+                //     transition -= coeff;
+                // }
+
+                // transition.simplify();
+                
+                
+                // auto factorization = carl::factorization(nominator);
+                
+                // ConstantType offset = utility::zero<ConstantType>();
+                // // if (factorization.size() == 1 && factorization.begin()->first != parameter && factorization.begin()->first != oneMinusParameter) {
+                // if (factorization.size() == 1 && nominator.nrTerms() > 1) {
+                //     auto offsetAsCln = nominator.constantPart();
+                //     nominator -= offsetAsCln;
+                //     factorization = carl::factorization(nominator);
+                //     offset = utility::convertNumber<ConstantType>(offsetAsCln / denominator);
+                // }
+                
+                // auto parameter = RawPolynomial(p);
+                // auto oneMinusParameter = RawPolynomial(1) - parameter;
+                // uint_fast64_t a = 0;
+                // uint_fast64_t b = 0;
+                // ConstantType constant = utility::one<ConstantType>();
+                // for (auto const& element : factorization) {
+                //     if (element.first == parameter) {
+                //         a = element.second;       
+                //     } else if (element.first == oneMinusParameter || element.first == -oneMinusParameter) {
+                //         b = element.second;
+                //     } else if (element.first.isConstant()) {
+                //         constant = utility::abs(utility::convertNumber<ConstantType>(element.first.constantPart() / denominator));
+                //     }
+                
+                // }
+                // 
+                auto result = tryDecomposing(nominator, true);
+                
+                STORM_LOG_ASSERT(result, "Polynomial had no decomposition.");
+                
+                uint_fast64_t a = result->first.first;
+                uint_fast64_t b = result->first.second;
+                ConstantType constant = result->second.first / constantDenom;
+                ConstantType offset = result->second.second / constantDenom;
+                
+                // Polynomial is constant * p^a * (1-p)^b + offset
+                
+                // The maximum of the polynomial part lies at a / (a + b), so compute that
+                // It is corrected for constant and offset later, not now
+                CoefficientType maximumCoeff;
+                if (a != 0 || b != 0) {
+                    maximumCoeff = utility::convertNumber<CoefficientType>(a) / utility::convertNumber<CoefficientType>(a + b);
+                } else {
+                    maximumCoeff = utility::zero<CoefficientType>();
                 }
-                
-                // Polynomial is p^a * (1-p)^b
-                
-                // The maximum lies at a / (a + b), so compute that
-                CoefficientType maximumCoeff = utility::convertNumber<CoefficientType>(a) / utility::convertNumber<CoefficientType>(a + b);
-                ConstantType maximum = utility::convertNumber<ConstantType>(a) / utility::convertNumber<ConstantType>(a + b);
+                ConstantType maximum = utility::convertNumber<ConstantType>(maximumCoeff);
                 
                 this->asAndBs.push_back(std::make_pair(a, b));
+                this->constantsAndOffsets.push_back(std::make_pair(utility::convertNumber<ConstantType>(constant), utility::convertNumber<ConstantType>(offset)));
+
                 std::map<VariableType, CoefficientType> substitution;
                 substitution.emplace(p, maximumCoeff);
 
                 this->maxima.push_back(std::make_pair(maximum, utility::convertNumber<ConstantType>(transition.evaluate(substitution))));
             }
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        boost::optional<std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>>> ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::tryDecomposing(RawPolynomial polynomial, bool firstIteration) {
+            auto parameterPol = RawPolynomial(parameter);
+            auto oneMinusParameter = RawPolynomial(1) - parameterPol;
+            if (polynomial.isConstant()) {
+                return std::make_pair(std::make_pair((uint_fast64_t) 0, (uint_fast64_t) 0), std::make_pair(utility::convertNumber<ConstantType>(polynomial.constantPart()), utility::zero<ConstantType>()));
+            }
+            auto byOneMinusP = polynomial.divideBy(oneMinusParameter);
+            if (byOneMinusP.remainder.isZero()) {
+                auto recursiveResult = tryDecomposing(byOneMinusP.quotient, false);
+                if (recursiveResult) {
+                    return std::make_pair(std::make_pair(recursiveResult->first.first, recursiveResult->first.second + 1), recursiveResult->second);
+                }
+            }
+            auto byP = polynomial.divideBy(parameterPol);
+            if (byP.remainder.isZero()) {
+                auto recursiveResult = tryDecomposing(byP.quotient, false);
+                if (recursiveResult) {
+                    return std::make_pair(std::make_pair(recursiveResult->first.first + 1, recursiveResult->first.second), recursiveResult->second);
+                }
+            }
+            if (!firstIteration) {
+                return boost::none;
+            }
+            if (byOneMinusP.remainder.isConstant()) {
+                auto rem1 = utility::convertNumber<ConstantType>(byOneMinusP.remainder.constantPart());
+                auto recursiveResult = tryDecomposing(byOneMinusP.quotient, false);
+                if (recursiveResult) {
+                    STORM_LOG_ASSERT(recursiveResult->second.second == 0, "");
+                    return std::make_pair(std::make_pair(recursiveResult->first.first, recursiveResult->first.second + 1), 
+                        std::pair<ConstantType, ConstantType>(recursiveResult->second.first, rem1));
+                }
+            }
+            if (byP.remainder.isConstant()) {
+                auto rem2 = utility::convertNumber<ConstantType>(byP.remainder.constantPart());
+                auto recursiveResult = tryDecomposing(byP.quotient, false);
+                if (recursiveResult) {
+                    STORM_LOG_ASSERT(recursiveResult->second.second == 0, "");
+                    return std::make_pair(std::make_pair(recursiveResult->first.first + 1, recursiveResult->first.second), 
+                        std::pair<ConstantType, ConstantType>(recursiveResult->second.first, rem2));
+                }
+            }
+            return boost::none;
         }
         
         template<typename ParametricType, typename ConstantType>
@@ -486,6 +608,11 @@ namespace storm {
         template<typename ParametricType, typename ConstantType>
         std::vector<RationalFunction> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getTransitions() const {
             return this->transitions;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<std::pair<ConstantType, ConstantType>> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getConstantsAndOffsets() const {
+            return this->constantsAndOffsets;
         }
 
         template<typename ParametricType, typename ConstantType>
@@ -563,6 +690,7 @@ namespace storm {
                 
                 auto maxima = bigStepTransition.getMaxima();
                 auto transitions = bigStepTransition.getTransitions();
+                auto constants = bigStepTransition.getConstantsAndOffsets();
                 auto p = bigStepTransition.getParameter();
                 
                 // The functions we consider are always p^a * (1-p)^b.
@@ -599,9 +727,15 @@ namespace storm {
                         lowerBounds[i] = left;
                         upperBounds[i] = right;
                     }
+                    lowerBounds[i] *= constants[i].first;
+                    upperBounds[i] *= constants[i].first;
+
+                    lowerBounds[i] += constants[i].second;
+                    upperBounds[i] += constants[i].second;
                 }
                 
-                std::cout << "aa" << std::endl;
+                
+                // std::cout << "aa" << std::endl;
                 // Build the polytope
 
                 std::vector<storage::geometry::Halfspace<ConstantType>> halfspaces;
