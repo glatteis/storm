@@ -174,7 +174,7 @@ namespace storm {
                     auto val = BigStepAbstractValuation(*occurringVariables.begin(), functions);
                     
                     // Create 2^(n+1) vertices
-                    std::size_t const numOfVertices = std::pow(2, val.getNumTransitions() + 1);
+                    std::size_t const numOfVertices = std::pow(2, val.getVectorIndices().size() + 1);
                     
                     // A BigStep valuation has at most numOfVertices rows with functions.size() columns
                     // This means we have numOfVertices * functions.size() ConstantType references 
@@ -524,24 +524,29 @@ namespace storm {
                 ConstantType offset = result->second.second / constantDenom;
                 
                 // Polynomial is constant * p^a * (1-p)^b + offset
+                //
+                auto aAndBPair = std::make_pair(a, b);
+                this->asAndBs.push_back(aAndBPair);
+                this->constantsAndOffsets.push_back(std::make_pair(utility::convertNumber<ConstantType>(constant), utility::convertNumber<ConstantType>(offset)));
                 
                 // The maximum of the polynomial part lies at a / (a + b), so compute that
                 // It is corrected for constant and offset later, not now
-                CoefficientType maximumCoeff;
-                if (a != 0 || b != 0) {
-                    maximumCoeff = utility::convertNumber<CoefficientType>(a) / utility::convertNumber<CoefficientType>(a + b);
-                } else {
-                    maximumCoeff = utility::zero<CoefficientType>();
+                this->vectorIndices[aAndBPair].push_back(asAndBs.size() - 1);
+                if (!this->maxima.count(aAndBPair)) {
+                    CoefficientType maximumCoeff;
+                    if (a != 0 || b != 0) {
+                        maximumCoeff = utility::convertNumber<CoefficientType>(a) / utility::convertNumber<CoefficientType>(a + b);
+                    } else {
+                        maximumCoeff = utility::zero<CoefficientType>();
+                    }
+                    ConstantType maximum = utility::convertNumber<ConstantType>(maximumCoeff);
+                    
+
+                    std::map<VariableType, CoefficientType> substitution;
+                    substitution.emplace(p, maximumCoeff);
+
+                    this->maxima.emplace(aAndBPair, std::make_pair(maximum, utility::convertNumber<ConstantType>(transition.evaluate(substitution))));
                 }
-                ConstantType maximum = utility::convertNumber<ConstantType>(maximumCoeff);
-                
-                this->asAndBs.push_back(std::make_pair(a, b));
-                this->constantsAndOffsets.push_back(std::make_pair(utility::convertNumber<ConstantType>(constant), utility::convertNumber<ConstantType>(offset)));
-
-                std::map<VariableType, CoefficientType> substitution;
-                substitution.emplace(p, maximumCoeff);
-
-                this->maxima.push_back(std::make_pair(maximum, utility::convertNumber<ConstantType>(transition.evaluate(substitution))));
             }
         }
 
@@ -621,10 +626,16 @@ namespace storm {
         }
 
         template<typename ParametricType, typename ConstantType>
-        std::vector<std::pair<ConstantType, ConstantType>> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getMaxima() const {
+        std::map<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getMaxima() const {
             return this->maxima;
         }
 
+        template<typename ParametricType, typename ConstantType>
+       std::map<std::pair<uint_fast64_t, uint_fast64_t>, std::vector<uint_fast64_t>> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getVectorIndices() const {
+            return this->vectorIndices;
+        }
+        
+        
         template<typename ParametricType, typename ConstantType>
         std::size_t ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getHashValue() const {
             std::size_t seed = 0;
@@ -685,8 +696,8 @@ namespace storm {
                 std::vector<std::reference_wrapper<ConstantType>> placeholders = collectedBigStepPlaceholders.second.second;
                 
                 // Compute lower bound and upper bound of function for every transition
-                std::vector<ConstantType> lowerBounds(bigStepTransition.getNumTransitions());
-                std::vector<ConstantType> upperBounds(bigStepTransition.getNumTransitions());
+                std::vector<ConstantType> lowerBounds(bigStepTransition.getVectorIndices().size());
+                std::vector<ConstantType> upperBounds(bigStepTransition.getVectorIndices().size());
                 
                 auto maxima = bigStepTransition.getMaxima();
                 auto transitions = bigStepTransition.getTransitions();
@@ -697,13 +708,17 @@ namespace storm {
                 // These always have a maximum at a / (a + b), are monotone increasing before and monotone decreasing after.
                 // So we are using a case distinction to compute the lower and upper bounds.
                 
-                for (uint_fast64_t i = 0; i < bigStepTransition.getNumTransitions(); i++) {
+                // Populate lowerBounds and upperBounds at position i
+                uint_fast64_t i = 0;
+                std::vector<std::pair<uint_fast64_t, uint_fast64_t>> lowerUpperIndicesToPair;
+                for (auto const& pair : bigStepTransition.getVectorIndices()) {
+                    lowerUpperIndicesToPair.push_back(pair.first);
+                    auto f = transitions[pair.second[0]];
+
                     CoefficientType lowerPCoeff = region.getLowerBoundary(p);
                     CoefficientType upperPCoeff = region.getUpperBoundary(p);
                     ConstantType lowerP = utility::convertNumber<ConstantType>(region.getLowerBoundary(p));
                     ConstantType upperP = utility::convertNumber<ConstantType>(region.getUpperBoundary(p));
-                    
-                    auto f = transitions[i];
                     
                     // Compute function values at left and right ends 
                     std::map<VariableType, CoefficientType> substitution;
@@ -712,39 +727,42 @@ namespace storm {
                     substitution[p] = upperPCoeff;
                     auto right = utility::convertNumber<ConstantType>(f.evaluate(substitution));
 
-                    if (lowerP <= maxima[i].first && upperP >= maxima[i].first) {
+                    if (lowerP <= maxima[pair.first].first && upperP >= maxima[pair.first].first) {
                         // Case 1: The valuation is around the maximum of the function.
                         // Lower bound is the minimum of left and right
                         lowerBounds[i] = utility::min(left, right);
                         // Upper bound is easy
-                        upperBounds[i] = maxima[i].second;
-                    } else if (lowerP > maxima[i].first) {
+                        upperBounds[i] = maxima[pair.first].second;
+                    } else if (lowerP > maxima[pair.first].first) {
                         // Case 2: The valuation is on the right of the maximum => monotone decreasing
                         lowerBounds[i] = right;
                         upperBounds[i] = left;
-                    } else if (upperP < maxima[i].first) {
+                    } else if (upperP < maxima[pair.first].first) {
                         // Case 3: The valuation is on the left of the maximum => monotone increasing
                         lowerBounds[i] = left;
                         upperBounds[i] = right;
                     }
-                    lowerBounds[i] *= constants[i].first;
-                    upperBounds[i] *= constants[i].first;
-
-                    lowerBounds[i] += constants[i].second;
-                    upperBounds[i] += constants[i].second;
+                    i++;
                 }
                 
+                // lowerBounds[i] *= constants[i].first;
+                // upperBounds[i] *= constants[i].first;
+
+                // lowerBounds[i] += constants[i].second;
+                // upperBounds[i] += constants[i].second;
                 
                 // std::cout << "aa" << std::endl;
                 // Build the polytope
+                // 
+                uint_fast64_t numHalfspaces = bigStepTransition.getVectorIndices().size();
 
                 std::vector<storage::geometry::Halfspace<ConstantType>> halfspaces;
                 // We assign new variables to the transitions: x_1, x_2, x_3, ..., x_n-1
                 // The last transition has the value 1 - x_1 - x_2 - ... - x_n-1
                 // Populate constraints for variables
-                for (uint_fast64_t i = 0; i < bigStepTransition.getNumTransitions() - 1; i++) {
-                    std::vector<ConstantType> normalVectorLower(bigStepTransition.getNumTransitions() - 1);
-                    std::vector<ConstantType> normalVectorUpper(bigStepTransition.getNumTransitions() - 1);
+                for (uint_fast64_t i = 0; i < numHalfspaces - 1; i++) {
+                    std::vector<ConstantType> normalVectorLower(numHalfspaces - 1);
+                    std::vector<ConstantType> normalVectorUpper(numHalfspaces - 1);
                     
                     normalVectorLower[i] = -utility::one<ConstantType>();
                     normalVectorUpper[i] = utility::one<ConstantType>();
@@ -756,14 +774,14 @@ namespace storm {
                     halfspaces.push_back(upperHalfspace);
                 }
                 
-                std::vector<ConstantType> normalVectorLowerLast(bigStepTransition.getNumTransitions() - 1);
-                std::vector<ConstantType> normalVectorUpperLast(bigStepTransition.getNumTransitions() - 1);
-                for (uint_fast64_t i = 0; i < bigStepTransition.getNumTransitions() - 1; i++) {
+                std::vector<ConstantType> normalVectorLowerLast(numHalfspaces - 1);
+                std::vector<ConstantType> normalVectorUpperLast(numHalfspaces - 1);
+                for (uint_fast64_t i = 0; i < numHalfspaces - 1; i++) {
                     normalVectorLowerLast[i] = utility::one<ConstantType>();
                     normalVectorUpperLast[i] = -utility::one<ConstantType>();
                 }
-                storage::geometry::Halfspace<ConstantType> lowerHalfspaceLast(normalVectorLowerLast, -lowerBounds[bigStepTransition.getNumTransitions() - 1] + utility::one<ConstantType>());
-                storage::geometry::Halfspace<ConstantType> upperHalfspaceLast(normalVectorUpperLast, upperBounds[bigStepTransition.getNumTransitions() - 1] - utility::one<ConstantType>());
+                storage::geometry::Halfspace<ConstantType> lowerHalfspaceLast(normalVectorLowerLast, -lowerBounds[numHalfspaces - 1] + utility::one<ConstantType>());
+                storage::geometry::Halfspace<ConstantType> upperHalfspaceLast(normalVectorUpperLast, upperBounds[numHalfspaces - 1] - utility::one<ConstantType>());
 
                 halfspaces.push_back(lowerHalfspaceLast);
                 halfspaces.push_back(upperHalfspaceLast);
@@ -780,24 +798,36 @@ namespace storm {
                 // }
                 
                 // std::cout << std::endl;
-                
-                // Modulo through the vertices so that we populate every row
-                for (uint_fast64_t row = 0; row < placeholders.size() / bigStepTransition.getNumTransitions(); row++) {
-                    auto vertex = vertices[row % vertices.size()];
-                    
-                    ConstantType lastValue = 1;
-                    for (uint_fast64_t i = 0; i < vertex.size(); i++) {
-                        ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + i];
-                        reference = vertex[i];
-                        lastValue -= vertex[i];
-                    }
-                    ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + vertex.size()];
-                    reference = lastValue;
+
+                // Compute how many unique rows there are in total
+                uint_fast64_t numUniqueRows = 0;
+                for (auto const& aAndB : lowerUpperIndicesToPair) {
+                    numUniqueRows += bigStepTransition.getVectorIndices().at(aAndB).size();
                 }
                 
-            }
+                // Modulo through the vertices so that we populate every row
+                for (uint_fast64_t vertexIndex = 0; vertexIndex < vertices.size(); vertexIndex++) {
+                    auto vertex = vertices[vertexIndex];
 
-            
+                    ConstantType lastValue = 1;
+                    for (auto const& value : vertex) {
+                        lastValue -= value;
+                    }
+                    vertex.push_back(lastValue);
+
+                    uint_fast64_t numberOfRows = placeholders.size() / bigStepTransition.getNumTransitions();
+                    for (uint_fast64_t row = vertexIndex; row < numberOfRows; row += numUniqueRows) {
+                        for (uint_fast64_t j = 0; j < vertex.size(); j++) {
+                            auto aAndB = lowerUpperIndicesToPair[j];
+                            auto transitionIndices = bigStepTransition.getVectorIndices().at(aAndB);
+                            for (auto const& i : transitionIndices) {
+                                ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + i];
+                                reference = constants[i].first * vertex[j] + constants[i].second;
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         template class ParameterLifter<storm::RationalFunction, double>;

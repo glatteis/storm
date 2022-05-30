@@ -137,10 +137,9 @@ namespace storm {
                 
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> const& getAsAndBs() const;
                 
-                std::vector<std::pair<ConstantType, ConstantType>> const& getMaxima() const;
+                std::map<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>> const& getMaxima() const;
                 
-                
-
+                std::map<std::pair<uint_fast64_t, uint_fast64_t>, std::vector<uint_fast64_t>> const& getVectorIndices() const;
             private:
                 VariableType const parameter;
                 
@@ -150,9 +149,16 @@ namespace storm {
                 std::vector<storm::RationalFunction> const transitions;
                 // Every transition of a bigStep valuation is p^a (1-p)^b - these are a and b
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> asAndBs;
+                // constants (so x * ...) and offsets (... + y)
                 std::vector<std::pair<ConstantType, ConstantType>> constantsAndOffsets;
+
+                // When computing the values, transitions with the same as and bs will be set to equal in the polytope,
+                // and they have the same maxima, so the following are indexed by as and bs
+
                 // Position and value of the maximum of each of the functions
-                std::vector<std::pair<ConstantType, ConstantType>> maxima;
+                std::map<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>> maxima;
+                // Indices in above vectors
+                std::map<std::pair<uint_fast64_t, uint_fast64_t>, std::vector<uint_fast64_t>> vectorIndices;
             };
 
             using AbstractValuation = boost::variant<typename ParameterLifter<ParametricType, ConstantType>::RectangleAbstractValuation, const typename ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation>;
