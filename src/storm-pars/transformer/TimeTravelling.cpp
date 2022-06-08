@@ -357,16 +357,17 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
 
     transitionMatrix = flexibleMatrix.createSparseMatrix();
     
+    std::queue<uint_fast64_t> topologicalOrderingQueue;
     topologicalOrdering = utility::graph::getTopologicalSort<RationalFunction>(transitionMatrix, {initialState});
     for (auto rit = topologicalOrdering.begin(); rit != topologicalOrdering.end(); ++rit) {
-        topologicalOrderingStack.push(*rit);
+        topologicalOrderingQueue.push(*rit);
     }
 
     flexibleMatrix = storage::FlexibleSparseMatrix<RationalFunction>(transitionMatrix);
     
-    while (!topologicalOrderingStack.empty()) {
-        auto state = topologicalOrderingStack.top();
-        topologicalOrderingStack.pop();
+    while (!topologicalOrderingQueue.empty()) {
+        auto state = topologicalOrderingQueue.front();
+        topologicalOrderingQueue.pop();
         
         for (auto const& oneStep : flexibleMatrix.getRow(state)) {
             if (!oneStep.getValue().isConstant()) {
@@ -390,10 +391,8 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                         auto newMatrix = flexibleMatrix;
                         for (auto const& state : workingSet) {
                             for (auto const& entry : flexibleMatrix.getRow(state)) {
-                                if (statesToReach.count(entry.getColumn())) {
-                                    continue;
-                                }
                                 bool canReachStatesFromHere = false;
+                                // canReachStatesFromHere |= statesToReach.count(entry.getColumn());
                                 for (auto const& stateToReach : statesToReach) {
                                     if (parameterMap[entry.getColumn()].count(stateToReach)) {
                                         canReachStatesFromHere = true;
@@ -402,8 +401,9 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                                 }
                                 
                                 if (!canReachStatesFromHere) {
-                                    break;
+                                    continue;
                                 }
+
                                 
                                 newMatrix.getRow(state).erase(std::find(newMatrix.getRow(state).begin(), newMatrix.getRow(state).end(), entry));
                                 for (auto const& successor : flexibleMatrix.getRow(entry.getColumn())) {
@@ -411,7 +411,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                                     newWorkingSet.emplace(entry.getColumn());
                                     newMatrix.getRow(state).push_back(storage::MatrixEntry<uint_fast64_t, RationalFunction>(successor.getColumn(), entry.getValue() * successor.getValue()));
                                 }
-                                flexibleMatrix.getRow(state) = joinDuplicateTransitions(flexibleMatrix.getRow(state));
+                                newMatrix.getRow(state) = joinDuplicateTransitions(newMatrix.getRow(state));
                             }
                         }
                         workingSet = newWorkingSet;
@@ -433,13 +433,18 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         }
     }
     
-    // deletableStates.complement();
-    // transitionMatrix = transitionMatrix.getSubmatrix(false, deletableStates, deletableStates);
-    // runningLabeling = runningLabeling.getSubLabeling(deletableStates);
+    deletableStates.complement();
+    transitionMatrix = transitionMatrix.getSubmatrix(false, deletableStates, deletableStates);
+    runningLabeling = runningLabeling.getSubLabeling(deletableStates);
     
-    // if (stateRewardVector) {
-        
-    // }
+    if (stateRewardVector) {
+        std::vector<RationalFunction> newStateRewardVector(transitionMatrix.getRowCount());
+        for (uint_fast64_t i = 0; i < stateRewardVector->size(); i++) {
+            if (deletableStates.get(i)) {
+                newStateRewardVector.push_back(stateRewardVector->at(i));
+            }
+        }
+    }
 
     models::sparse::Dtmc<RationalFunction> newDTMC(transitionMatrix, runningLabeling);
 

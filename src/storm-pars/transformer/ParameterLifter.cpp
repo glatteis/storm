@@ -56,12 +56,12 @@ namespace storm {
             uint_fast64_t newRowIndex = 0;
             uint_fast64_t countNonParam = 0;
             
-            // std::cout << pMatrix << std::endl;
+            std::cout << pMatrix << std::endl;
             
-            // for (auto const& entry : pVector) {
-            //     std::cout << entry << " ";
-            // }
-            // std::cout << std::endl;
+            for (auto const& entry : pVector) {
+                std::cout << entry << " ";
+            }
+            std::cout << std::endl;
 
             for (auto const& rowIndex : selectedRows) {
                 builder.newRowGroup(newRowIndex);
@@ -274,7 +274,8 @@ namespace storm {
                 *assignment.first = assignment.second;
             
             }
-            // std::cout << matrix << std::endl;
+            std::cout << matrix << std::endl;
+            STORM_LOG_ASSERT(matrix.isProbabilistic(), "Matrix not probabilistic!");
         }
 
         template<typename ParametricType, typename ConstantType>
