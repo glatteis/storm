@@ -698,6 +698,7 @@ namespace storm {
                 // Compute lower bound and upper bound of function for every transition
                 std::vector<ConstantType> lowerBounds(bigStepTransition.getVectorIndices().size());
                 std::vector<ConstantType> upperBounds(bigStepTransition.getVectorIndices().size());
+                std::vector<ConstantType> sumsOfConstants(bigStepTransition.getVectorIndices().size());
                 
                 auto maxima = bigStepTransition.getMaxima();
                 auto transitions = bigStepTransition.getTransitions();
@@ -714,6 +715,12 @@ namespace storm {
                 for (auto const& pair : bigStepTransition.getVectorIndices()) {
                     lowerUpperIndicesToPair.push_back(pair.first);
                     auto f = transitions[pair.second[0]];
+                    
+                    ConstantType sumOfConstants = 0;
+                    for (uint_fast64_t index : pair.second) {
+                        sumOfConstants += constants[index].first;
+                    }
+                    sumsOfConstants[i] = sumOfConstants;
 
                     CoefficientType lowerPCoeff = region.getLowerBoundary(p);
                     CoefficientType upperPCoeff = region.getUpperBoundary(p);
@@ -767,8 +774,8 @@ namespace storm {
                     normalVectorLower[i] = -utility::one<ConstantType>();
                     normalVectorUpper[i] = utility::one<ConstantType>();
                     
-                    storage::geometry::Halfspace<ConstantType> lowerHalfspace(normalVectorLower, -lowerBounds[i]);
-                    storage::geometry::Halfspace<ConstantType> upperHalfspace(normalVectorUpper, upperBounds[i]);
+                    storage::geometry::Halfspace<ConstantType> lowerHalfspace(normalVectorLower, -lowerBounds[i] * sumsOfConstants[i]);
+                    storage::geometry::Halfspace<ConstantType> upperHalfspace(normalVectorUpper, upperBounds[i] * sumsOfConstants[i]);
                     
                     halfspaces.push_back(lowerHalfspace);
                     halfspaces.push_back(upperHalfspace);
@@ -822,7 +829,7 @@ namespace storm {
                             auto transitionIndices = bigStepTransition.getVectorIndices().at(aAndB);
                             for (auto const& i : transitionIndices) {
                                 ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + i];
-                                reference = constants[i].first * vertex[j] + constants[i].second;
+                                reference = (constants[i].first / sumsOfConstants[j]) * vertex[j] + constants[i].second;
                             }
                         }
                     }

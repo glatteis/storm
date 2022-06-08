@@ -110,24 +110,43 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         auto state = topologicalOrderingStack.top();
         topologicalOrderingStack.pop();
         // Check if we can reach more than one var from here (by the original matrix)
-        bool moreThanOneVarReachable = false;
+        bool performJipConvert = false;
+        bool reorderingPossible = false;
 
         bool alreadyReorderedWrtThis = true;
         for (auto const& parameter : allParameters) {
             if (!treeStates[parameter].count(state)) {
                 continue;
             }
+            // If we can reach more than two equal parameters, we can reorder
             auto const entry = treeStates.at(parameter).at(state);
             if (entry.size() >= 2) {
-                moreThanOneVarReachable = true;
+                performJipConvert = true;
+                reorderingPossible = true;
             }
             if (alreadyReorderedWrt.count(std::make_pair(parameter, entry)) == 0) {
                 alreadyReorderedWrtThis = false;
             }
             alreadyReorderedWrt.emplace(std::make_pair(parameter, entry));
         }
+        // TODO big-step-jip-convert if it makes sense
+        // // If we can do big-step, we should do jip-convert, but not reorder
+        // // Check for a parametric parent transition
+        // for (auto const& entry : backwardsTransitions.getRow(state)) {
+        //     if (!entry.getValue().isConstant()) {
+        //         auto variables = entry.getValue().gatherVariables();
+        //         STORM_LOG_ERROR_COND(variables.size() == 1, "Multivariate polynomials not allowed!");
+        //         auto parameter = *variables.begin();
+                
+        //         // Parametric parent transition found, check if the same parameter is constantly reachable
+        //         if (treeStates[parameter].count(state) && treeStates.at(parameter).at(state).size() >= 1) {
+        //             performJipConvert = true;
+        //             break;
+        //         }
+        //     }
+        // }
         
-        if (!moreThanOneVarReachable || alreadyReorderedWrtThis) {
+        if (!performJipConvert || alreadyReorderedWrtThis) {
             continue;
         }
         std::map<uint_fast64_t, bool> alreadyVisited;
@@ -148,7 +167,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         #endif
         
         // Now our matrix is in Jip normal form. Now re-order if that is needed
-        if (moreThanOneVarReachable) {
+        if (reorderingPossible) {
             std::map<storm::RationalFunctionVariable, std::set<uint_fast64_t>> parameterBuckets;
             std::map<storm::RationalFunctionVariable, RationalFunction> cumulativeProbabilities;
 
@@ -344,69 +363,83 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
     }
 
     flexibleMatrix = storage::FlexibleSparseMatrix<RationalFunction>(transitionMatrix);
-    auto flexibleBackwards = storage::FlexibleSparseMatrix<RationalFunction>(backwardsTransitions);
-    solver::stateelimination::StateEliminator<RationalFunction> stateEliminator(flexibleMatrix, flexibleBackwards);
     
     while (!topologicalOrderingStack.empty()) {
         auto state = topologicalOrderingStack.top();
         topologicalOrderingStack.pop();
         
-        // Also check if we can do big-step from here
-        // For that, we need to see if this state is directly after a p-transition
-        bool bigStepReachable = false;
-        boost::optional<RationalFunctionVariable> bigStepParameter;
-        boost::optional<uint_fast64_t> bigStepParent;
-        for (auto const& entry : backwardsTransitions.getRow(state)) {
-            if (!entry.getValue().isConstant()) {
-                auto variables = entry.getValue().gatherVariables();
+        for (auto const& oneStep : flexibleMatrix.getRow(state)) {
+            if (!oneStep.getValue().isConstant()) {
+                auto variables = oneStep.getValue().gatherVariables();
                 STORM_LOG_ERROR_COND(variables.size() == 1, "Multivariate polynomials not allowed!");
                 auto parameter = *variables.begin();
                 
-                if (treeStates[parameter].count(state) && treeStates.at(parameter).at(state).size() >= 1) {
-                    bigStepReachable = true;
-                    bigStepParameter = parameter;
-                    bigStepParent = entry.getColumn();
-                }
-            }
-        }
-
-        // Now do big-step if that is needed
-        if (bigStepReachable) {
-            
-            auto parameterMap = treeStates.at(*bigStepParameter);
-            auto statesToReach = parameterMap.at(state);
-            std::set<uint_fast64_t> workingSet;
-            std::set<uint_fast64_t> eliminate;
-            
-            workingSet.emplace(state);
-            eliminate.emplace(state);
-            
-            while (!workingSet.empty()) {
-                std::set<uint_fast64_t> newWorkingSet;
-                for (auto const& state : workingSet) {
-                    for (auto const& entry : flexibleMatrix.getRow(state)) {
-                        if (statesToReach.count(entry.getColumn()) || eliminate.count(entry.getColumn()) || !entry.getValue().isConstant()) {
-                            continue;
-                        }
-                        for (auto const& stateToReach : statesToReach) {
-                            if (parameterMap[entry.getColumn()].count(stateToReach)) {
-                                newWorkingSet.emplace(entry.getColumn());
-                                eliminate.emplace(entry.getColumn());
+                if (treeStates[parameter].count(oneStep.getColumn()) && treeStates.at(parameter).at(oneStep.getColumn()).size() >= 1) {
+                    // Do big-step lifting from here
+                    // Just follow the treeStates and eliminate transitions
+                    // It is already jip-converted, so the next parametric transition is <=2 steps away
+                    
+                    auto parameterMap = treeStates.at(parameter);
+                    auto statesToReach = parameterMap.at(oneStep.getColumn());
+                    std::set<uint_fast64_t> workingSet;
+                    
+                    workingSet.emplace(state);
+                    
+                    while (!workingSet.empty()) {
+                        std::set<uint_fast64_t> newWorkingSet;
+                        auto newMatrix = flexibleMatrix;
+                        for (auto const& state : workingSet) {
+                            for (auto const& entry : flexibleMatrix.getRow(state)) {
+                                if (statesToReach.count(entry.getColumn())) {
+                                    continue;
+                                }
+                                bool canReachStatesFromHere = false;
+                                for (auto const& stateToReach : statesToReach) {
+                                    if (parameterMap[entry.getColumn()].count(stateToReach)) {
+                                        canReachStatesFromHere = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!canReachStatesFromHere) {
+                                    break;
+                                }
+                                
+                                newMatrix.getRow(state).erase(std::find(newMatrix.getRow(state).begin(), newMatrix.getRow(state).end(), entry));
+                                for (auto const& successor : flexibleMatrix.getRow(entry.getColumn())) {
+                                    std::cout << "BigStep: State " << state << " to " << successor.getColumn() << std::endl;
+                                    newWorkingSet.emplace(entry.getColumn());
+                                    newMatrix.getRow(state).push_back(storage::MatrixEntry<uint_fast64_t, RationalFunction>(successor.getColumn(), entry.getValue() * successor.getValue()));
+                                }
+                                flexibleMatrix.getRow(state) = joinDuplicateTransitions(flexibleMatrix.getRow(state));
                             }
                         }
+                        workingSet = newWorkingSet;
+                        flexibleMatrix = newMatrix;
                     }
                 }
-                workingSet = newWorkingSet;
-            }
-            for (auto const& state : eliminate) {
-                std::cout << "BigStep Eliminate " << state << std::endl;
-                stateEliminator.eliminateState(state, false);
-                std::cout << "Done eliminating" << std::endl;
             }
         }
     }
     
     transitionMatrix = flexibleMatrix.createSparseMatrix();
+    backwardsTransitions = transitionMatrix.transpose(true);
+    
+    // Identify deletable states
+    storage::BitVector deletableStates(transitionMatrix.getRowCount());
+    for (uint_fast64_t row = 0; row < backwardsTransitions.getRowCount(); row++) {
+        if (backwardsTransitions.getRow(row).getNumberOfEntries() == 0 && row != initialState) {
+            deletableStates.set(row, true);
+        }
+    }
+    
+    // deletableStates.complement();
+    // transitionMatrix = transitionMatrix.getSubmatrix(false, deletableStates, deletableStates);
+    // runningLabeling = runningLabeling.getSubLabeling(deletableStates);
+    
+    // if (stateRewardVector) {
+        
+    // }
 
     models::sparse::Dtmc<RationalFunction> newDTMC(transitionMatrix, runningLabeling);
 

@@ -15,6 +15,7 @@
 
 #include "storm/exceptions/InvalidArgumentException.h"
 #include "storm/exceptions/NotSupportedException.h"
+#include "utility/macros.h"
 
 namespace storm {
     namespace modelchecker {
@@ -147,6 +148,7 @@ namespace storm {
             } else {
                 STORM_LOG_THROW(false, storm::exceptions::InvalidArgumentException, "When analyzing a region, an invalid initial result was given: " << initialResult);
             }
+            STORM_LOG_INFO("Region " << region << " is " << result << "\n");
             return result;
         }
         

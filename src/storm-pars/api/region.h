@@ -16,6 +16,7 @@
 #include "storm-pars/modelchecker/region/RegionResultHypothesis.h"
 #include "storm-pars/parser/ParameterRegionParser.h"
 #include "storm-pars/parser/MonotonicityParser.h"
+#include "storm-pars/settings/modules/RegionSettings.h"
 #include "storm-pars/storage/ParameterRegion.h"
 #include "storm-pars/utility/parameterlifting.h"
 
@@ -117,9 +118,12 @@ namespace storm {
 
         template <typename ParametricType, typename ConstantType>
         std::shared_ptr<storm::modelchecker::RegionModelChecker<ParametricType>> initializeParameterLiftingRegionModelChecker(Environment const& env, std::shared_ptr<storm::models::sparse::Model<ParametricType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ParametricType> const& task, bool generateSplitEstimates = false, bool allowModelSimplification = true, MonotonicitySetting monotonicitySetting = MonotonicitySetting(), boost::optional<std::pair<std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ParametricType>::VariableType>>> monotoneParameters = boost::none) {
+            // TODO not import this maybe...
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
 
             STORM_LOG_WARN_COND(storm::utility::parameterlifting::validateParameterLiftingSound(*model, task.getFormula()), "Could not validate whether parameter lifting is applicable. Please validate manually...");
             STORM_LOG_WARN_COND(!(allowModelSimplification && monotonicitySetting.useMonotonicity), "Allowing model simplification when using monotonicity is not useful, as for monotonicity checking model simplification is done as preprocessing");
+            STORM_LOG_WARN_COND(!(allowModelSimplification && regionSettings.isTimeTravellingEnabled()), "Model simplification destroys big-step lifting");
             STORM_LOG_WARN_COND(!(monotoneParameters && !monotonicitySetting.useMonotonicity), "Setting monotone parameters without setting monotonicity usage doesn't work");
 
             std::shared_ptr<storm::models::sparse::Model<ParametricType>> consideredModel = model;
@@ -208,8 +212,10 @@ namespace storm {
         
         template <typename ValueType>
         std::unique_ptr<storm::modelchecker::RegionCheckResult<ValueType>> checkRegionsWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, std::vector<storm::storage::ParameterRegion<ValueType>> const& regions, storm::modelchecker::RegionCheckEngine engine, std::vector<storm::modelchecker::RegionResultHypothesis> const& hypotheses, bool sampleVerticesOfRegions) {
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             Environment env;
-            auto regionChecker = initializeRegionModelChecker(env, model, task, engine);
+            bool allowModelSimplification = !regionSettings.isTimeTravellingEnabled();
+            auto regionChecker = initializeRegionModelChecker(env, model, task, engine, false, allowModelSimplification);
             return regionChecker->analyzeRegions(env, regions, hypotheses, sampleVerticesOfRegions);
         }
     
@@ -246,8 +252,10 @@ namespace storm {
          */
         template <typename ValueType>
         std::pair<ValueType, typename storm::storage::ParameterRegion<ValueType>::Valuation> computeExtremalValue(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, storm::storage::ParameterRegion<ValueType> const& region, storm::modelchecker::RegionCheckEngine engine, storm::solver::OptimizationDirection const& dir, boost::optional<ValueType> const& precision, bool absolutePrecision, MonotonicitySetting monotonicitySetting, bool generateSplitEstimates = false, boost::optional<std::pair<std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>>>& monotoneParameters = boost::none) {
+            // TODO not import this maybe...
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             Environment env;
-            bool allowModelSimplification = !monotonicitySetting.useMonotonicity;
+            bool allowModelSimplification = !monotonicitySetting.useMonotonicity && !regionSettings.isTimeTravellingEnabled();
             auto regionChecker = initializeRegionModelChecker(env, model, task, engine, generateSplitEstimates, allowModelSimplification, monotonicitySetting, monotoneParameters);
             return regionChecker->computeExtremalValue(env, region, dir, precision.is_initialized() ? precision.get() : storm::utility::zero<ValueType>(), absolutePrecision);
         }
@@ -262,8 +270,10 @@ namespace storm {
          */
         template <typename ValueType>
         bool checkExtremalValue(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, storm::storage::ParameterRegion<ValueType> const& region, storm::modelchecker::RegionCheckEngine engine, storm::solver::OptimizationDirection const& dir, boost::optional<ValueType> const& precision, bool absolutePrecision, ValueType const& suggestion, MonotonicitySetting monotonicitySetting, bool generateSplitEstimates = false, boost::optional<std::pair<std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>>>& monotoneParameters = boost::none) {
+            // TODO not import this maybe...
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             Environment env;
-            bool allowModelSimplification = !monotonicitySetting.useMonotonicity;
+            bool allowModelSimplification = !monotonicitySetting.useMonotonicity && !regionSettings.isTimeTravellingEnabled();
             auto regionChecker = initializeRegionModelChecker(env, model, task, engine, generateSplitEstimates, allowModelSimplification, monotonicitySetting, monotoneParameters);
             return regionChecker->checkExtremalValue(env, region, dir, precision.is_initialized() ? precision.get() : storm::utility::zero<ValueType>(), absolutePrecision, suggestion);
         }
