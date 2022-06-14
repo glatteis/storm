@@ -275,6 +275,10 @@ namespace storm {
             
             }
             std::cout << matrix << std::endl;
+            for (auto const& entry : vector) {
+                std::cout << entry << " ";
+            }
+            std::cout << std::endl;
             STORM_LOG_ASSERT(matrix.isProbabilistic(), "Matrix not probabilistic!");
         }
 

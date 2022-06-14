@@ -304,23 +304,10 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                 }
             }
 
-            // Extend labeling to more states (Found no better way to do it)
-            models::sparse::StateLabeling nextNewLabels(newMatrixSize);
-            for (auto const& label : runningLabeling.getLabels()) {
-                nextNewLabels.addLabel(label);
-            }
-            for (uint_fast64_t state = 0; state < flexibleMatrix.getRowCount(); state++) {
-                for (auto const& label : runningLabeling.getLabelsOfState(state)) {
-                    nextNewLabels.addLabelToState(label, state);
-                }
-            }
+            // Extend labeling to more states
+            models::sparse::StateLabeling nextNewLabels = extendStateLabeling(runningLabeling, flexibleMatrix.getRowCount(), newMatrixSize, state, labelsInFormula);
+            
             for (uint_fast64_t i = flexibleMatrix.getRowCount(); i < newMatrixSize; i++) {
-                // We assume that everything that we time-travel has the same labels for now.
-                for (auto const& label : runningLabeling.getLabelsOfState(state)) {
-                    if (labelsInFormula.count(label)) {
-                        nextNewLabels.addLabelToState(label, i);
-                    }
-                }
                 // Next consider the new states
                 topologicalOrderingStack.push(i);
                 // New states have zero reward
@@ -411,7 +398,18 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                                     newWorkingSet.emplace(entry.getColumn());
                                     newMatrix.getRow(state).push_back(storage::MatrixEntry<uint_fast64_t, RationalFunction>(successor.getColumn(), entry.getValue() * successor.getValue()));
                                 }
-                                newMatrix.getRow(state) = joinDuplicateTransitions(newMatrix.getRow(state));
+                                uint_fast64_t oldSize = newMatrix.getRowCount();
+                                newMatrix = duplicateTransitionsOntoNewStates(newMatrix, state);
+                                uint_fast64_t newSize = newMatrix.getRowCount();
+                                
+                                if (newSize > oldSize) {
+                                    runningLabeling = extendStateLabeling(runningLabeling, oldSize, newSize, state, labelsInFormula);
+                                    if (stateRewardVector) {
+                                        for (auto row = oldSize; row < newSize; row++) {
+                                            stateRewardVector->push_back(storm::utility::zero<RationalFunction>());
+                                        }
+                                    }
+                                }
                             }
                         }
                         workingSet = newWorkingSet;
@@ -421,6 +419,8 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
             }
         }
     }
+    
+    std::cout << flexibleMatrix << std::endl;
     
     transitionMatrix = flexibleMatrix.createSparseMatrix();
     backwardsTransitions = transitionMatrix.transpose(true);
@@ -479,6 +479,82 @@ std::vector<storm::storage::MatrixEntry<uint_fast64_t, RationalFunction>> TimeTr
         newEntries.push_back(existingEntries.at(key));
     }
     return newEntries;
+}
+
+
+models::sparse::StateLabeling TimeTravelling::extendStateLabeling(models::sparse::StateLabeling const& oldLabeling, uint_fast64_t oldSize, uint_fast64_t newSize, uint_fast64_t stateWithLabels, const std::set<std::string> labelsInFormula) {
+    models::sparse::StateLabeling newLabels(newSize);
+    for (auto const& label : oldLabeling.getLabels()) {
+        newLabels.addLabel(label);
+    }
+    for (uint_fast64_t state = 0; state < oldSize; state++) {
+        for (auto const& label : oldLabeling.getLabelsOfState(state)) {
+            newLabels.addLabelToState(label, state);
+        }
+    }
+    for (uint_fast64_t i = oldSize; i < newSize; i++) {
+        // We assume that everything that we time-travel has the same labels for now.
+        for (auto const& label : oldLabeling.getLabelsOfState(stateWithLabels)) {
+            if (labelsInFormula.count(label)) {
+                newLabels.addLabelToState(label, i);
+            }
+        }
+    }
+    return newLabels;
+}
+
+// We are duplicating transitions to new states because of this problem:
+//  
+// The big step lifter needs transitions that are of the form c * p^a * (1-p)^b * d
+// The time traveller generally provides these, except when there are multiple
+// of these transitions pointing from the same state to the same state
+// Then these need to be summed, and the a and b information gets lost
+// Thus we create new states in the middle such that we preserve this format of transition
+storage::FlexibleSparseMatrix<RationalFunction> TimeTravelling::duplicateTransitionsOntoNewStates(
+        storage::FlexibleSparseMatrix<RationalFunction> const& matrix,
+        uint_fast64_t row
+) {
+    auto const entries = matrix.getRow(row);
+    
+    std::map<uint_fast64_t, storm::storage::MatrixEntry<uint_fast64_t, RationalFunction>, std::less<uint_fast64_t>> existingEntries;
+    
+    // Vector consists of states that we go to with probability one
+    std::vector<uint_fast64_t> additionalRows;
+    
+    uint_fast64_t newRowIndex = matrix.getRowCount();
+    
+    for (auto const& entry : entries) {
+        if (existingEntries.count(entry.getColumn())) {
+            existingEntries[newRowIndex] = storage::MatrixEntry<uint_fast64_t, RationalFunction>(newRowIndex, entry.getValue());
+            additionalRows.push_back(entry.getColumn());
+            newRowIndex++;
+        } else {
+            existingEntries[entry.getColumn()] = entry;
+        }
+    }
+    
+    std::vector<storm::storage::MatrixEntry<uint_fast64_t, RationalFunction>> newEntries;
+    for (auto const& pair : existingEntries) {
+        newEntries.push_back(pair.second);
+    }
+
+    storage::FlexibleSparseMatrix<RationalFunction> newMatrix;
+    if (newRowIndex > matrix.getRowCount()) {
+        storage::SparseMatrixBuilder<RationalFunction> builder;
+        newMatrix = storage::FlexibleSparseMatrix<RationalFunction>(builder.build(newRowIndex, newRowIndex, 0));
+        for (uint_fast64_t row = 0; row < matrix.getRowCount(); row++) {
+            newMatrix.getRow(row) = matrix.getRow(row);
+        }
+        for (uint_fast64_t row = matrix.getRowCount(); row < newRowIndex; row++) {
+            newMatrix.getRow(row).push_back(storage::MatrixEntry<uint_fast64_t, RationalFunction>(additionalRows[row - matrix.getRowCount()], utility::one<RationalFunction>()));
+        }
+    } else {
+        newMatrix = storage::FlexibleSparseMatrix<RationalFunction>(matrix);
+    }
+
+    newMatrix.getRow(row) = newEntries;
+
+    return newMatrix;
 }
 
 bool TimeTravelling::labelsIntersectedEqual(const std::set<std::string>& labels1, const std::set<std::string>& labels2,

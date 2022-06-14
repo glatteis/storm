@@ -283,6 +283,22 @@ namespace storm {
 
             PreprocessResult result(model, false);
             
+            if (!regionSettings.isTimeTravellingEnabled() && (monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() || derSettings.getDerivativeAtInstantiation())) {
+                STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
+                result.model = storm::pars::simplifyModel<ValueType>(result.model, input);
+                result.changed = true;
+            }
+            
+            if (result.model->isOfType(storm::models::ModelType::MarkovAutomaton)) {
+                result.model = storm::cli::preprocessSparseMarkovAutomaton(result.model->template as<storm::models::sparse::MarkovAutomaton<ValueType>>());
+                result.changed = true;
+            }
+
+            if (mpi.applyBisimulation) {
+                result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
+                result.changed = true;
+            }
+
             if (regionSettings.isTimeTravellingEnabled()) {
                 result.changed = true;
                 auto oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
@@ -303,22 +319,6 @@ namespace storm {
                     }
                     oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
                 }
-            }
-            
-            if (monSettings.isMonotonicityAnalysisSet() || parametricSettings.isUseMonotonicitySet() || derSettings.isFeasibleInstantiationSearchSet() || derSettings.getDerivativeAtInstantiation()) {
-                STORM_LOG_THROW(!input.properties.empty(), storm::exceptions::InvalidSettingsException, "When computing monotonicity, a property has to be specified");
-                result.model = storm::pars::simplifyModel<ValueType>(result.model, input);
-                result.changed = true;
-            }
-            
-            if (result.model->isOfType(storm::models::ModelType::MarkovAutomaton)) {
-                result.model = storm::cli::preprocessSparseMarkovAutomaton(result.model->template as<storm::models::sparse::MarkovAutomaton<ValueType>>());
-                result.changed = true;
-            }
-
-            if (mpi.applyBisimulation) {
-                result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
-                result.changed = true;
             }
 
             if (transformationSettings.isChainEliminationSet() &&
