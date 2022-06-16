@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "adapters/RationalNumberAdapter.h"
 #include "storage/geometry/NativePolytope.h"
 #include "storage/geometry/Polytope.h"
 #include "storm/adapters/RationalFunctionAdapter.h"
@@ -153,7 +154,7 @@ namespace storm {
                                 }
                             }
                             ConstantType& placeholder = functionValuationCollector.addRectValuation(pVectorEntry, vectorVal);
-                            vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
+                            vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(std::move(typename std::vector<ConstantType>::iterator()), placeholder));
                         }
                         ++newRowIndex;
                     }
@@ -182,6 +183,7 @@ namespace storm {
                     auto placeholdersIterator = placeholders.begin();
 
                     for (uint_fast64_t i = 0; i < numOfVertices; i++) {
+                        bool addedNonConstantVectorEntry = false;
                         for (auto const& entry: pMatrix.getRow(rowIndex)) {
                             if(selectedColumns.get(entry.getColumn())) {
                                 if (storm::utility::isConstant(entry.getValue())) {
@@ -193,21 +195,27 @@ namespace storm {
                                     countPlaceHolders++;
                                     placeholdersIterator++;
                                     
-                                    if (entry.getValue() == pVectorEntry) {
-                                        vector.push_back(storm::utility::one<ConstantType>());
-                                        vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
-                                        countPlaceHolders++;
-                                    }
                                 }
+                            } else if (entry.getValue() == pVectorEntry) {
+                                addedNonConstantVectorEntry = true;
+                                ConstantType& placeholder = *placeholdersIterator;
+                                vector.push_back(storm::utility::one<ConstantType>());
+                                vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
+                                countPlaceHolders++;
+                                placeholdersIterator++;
+                            } else {
+                                countPlaceHolders++;
+                                placeholdersIterator++;
                             }
                         }
                         // Insert the vector entry for this row
                         if (storm::utility::isConstant(pVectorEntry)) {
                             vector.push_back(storm::utility::convertNumber<ConstantType>(pVectorEntry));
                         } else {
+                            STORM_LOG_ASSERT(addedNonConstantVectorEntry, "Non-constant vector entry but did not add it");
                             // ConstantType& placeholder = *placeholdersIterator;
                             // vector.push_back(storm::utility::one<ConstantType>());
-                            // vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
+                            // vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(std::move(typename std::vector<ConstantType>::iterator()), placeholder));
                             // countPlaceHolders++;
                         }
                         ++newRowIndex;
@@ -460,9 +468,6 @@ namespace storm {
                 std::cout << constantPart << std::endl;
 
                 CoefficientType denominator = transition.denominator().constantPart();
-                ConstantType constantDenom = utility::convertNumber<ConstantType>(denominator);
-                
-                std::cout << constantDenom << std::endl;
 
                 auto nominator = RawPolynomial(transition.nominator());
                 
@@ -524,14 +529,18 @@ namespace storm {
                 
                 uint_fast64_t a = result->first.first;
                 uint_fast64_t b = result->first.second;
-                ConstantType constant = result->second.first / constantDenom;
-                ConstantType offset = result->second.second / constantDenom;
+                CoefficientType constant = result->second.first / denominator;
+                CoefficientType offset = result->second.second / denominator;
+                
+                auto cleanedTransition = (transition - offset) / constant;
+                std::cout << cleanedTransition << std::endl;
                 
                 // Polynomial is constant * p^a * (1-p)^b + offset
                 //
                 auto aAndBPair = std::make_pair(a, b);
                 this->asAndBs.push_back(aAndBPair);
                 this->constantsAndOffsets.push_back(std::make_pair(utility::convertNumber<ConstantType>(constant), utility::convertNumber<ConstantType>(offset)));
+                this->cleanedTransitions.push_back(cleanedTransition);
                 
                 // The maximum of the polynomial part lies at a / (a + b), so compute that
                 // It is corrected for constant and offset later, not now
@@ -548,18 +557,18 @@ namespace storm {
 
                     std::map<VariableType, CoefficientType> substitution;
                     substitution.emplace(p, maximumCoeff);
-
-                    this->maxima.emplace(aAndBPair, std::make_pair(maximum, utility::convertNumber<ConstantType>(transition.evaluate(substitution))));
+                    
+                    this->maxima.emplace(aAndBPair, std::make_pair(maximum, utility::convertNumber<ConstantType>(cleanedTransition.evaluate(substitution))));
                 }
             }
         }
 
         template<typename ParametricType, typename ConstantType>
-        boost::optional<std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>>> ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::tryDecomposing(RawPolynomial polynomial, bool firstIteration) {
+        boost::optional<std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<typename storm::utility::parametric::CoefficientType<ParametricType>::type, typename storm::utility::parametric::CoefficientType<ParametricType>::type>>> ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::tryDecomposing(RawPolynomial polynomial, bool firstIteration) {
             auto parameterPol = RawPolynomial(parameter);
             auto oneMinusParameter = RawPolynomial(1) - parameterPol;
             if (polynomial.isConstant()) {
-                return std::make_pair(std::make_pair((uint_fast64_t) 0, (uint_fast64_t) 0), std::make_pair(utility::convertNumber<ConstantType>(polynomial.constantPart()), utility::zero<ConstantType>()));
+                return std::make_pair(std::make_pair((uint_fast64_t) 0, (uint_fast64_t) 0), std::make_pair(utility::convertNumber<CoefficientType>(polynomial.constantPart()), utility::zero<CoefficientType>()));
             }
             auto byOneMinusP = polynomial.divideBy(oneMinusParameter);
             if (byOneMinusP.remainder.isZero()) {
@@ -579,21 +588,21 @@ namespace storm {
                 return boost::none;
             }
             if (byOneMinusP.remainder.isConstant()) {
-                auto rem1 = utility::convertNumber<ConstantType>(byOneMinusP.remainder.constantPart());
+                auto rem1 = utility::convertNumber<CoefficientType>(byOneMinusP.remainder.constantPart());
                 auto recursiveResult = tryDecomposing(byOneMinusP.quotient, false);
                 if (recursiveResult) {
                     STORM_LOG_ASSERT(recursiveResult->second.second == 0, "");
                     return std::make_pair(std::make_pair(recursiveResult->first.first, recursiveResult->first.second + 1), 
-                        std::pair<ConstantType, ConstantType>(recursiveResult->second.first, rem1));
+                        std::pair<CoefficientType, CoefficientType>(recursiveResult->second.first, rem1));
                 }
             }
             if (byP.remainder.isConstant()) {
-                auto rem2 = utility::convertNumber<ConstantType>(byP.remainder.constantPart());
+                auto rem2 = utility::convertNumber<CoefficientType>(byP.remainder.constantPart());
                 auto recursiveResult = tryDecomposing(byP.quotient, false);
                 if (recursiveResult) {
                     STORM_LOG_ASSERT(recursiveResult->second.second == 0, "");
                     return std::make_pair(std::make_pair(recursiveResult->first.first + 1, recursiveResult->first.second), 
-                        std::pair<ConstantType, ConstantType>(recursiveResult->second.first, rem2));
+                        std::pair<CoefficientType, CoefficientType>(recursiveResult->second.first, rem2));
                 }
             }
             return boost::none;
@@ -617,6 +626,11 @@ namespace storm {
         template<typename ParametricType, typename ConstantType>
         std::vector<RationalFunction> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getTransitions() const {
             return this->transitions;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<RationalFunction> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getCleanedTransitions() const {
+            return this->cleanedTransitions;
         }
 
         template<typename ParametricType, typename ConstantType>
@@ -706,6 +720,7 @@ namespace storm {
                 
                 auto maxima = bigStepTransition.getMaxima();
                 auto transitions = bigStepTransition.getTransitions();
+                auto cleanedTransitions = bigStepTransition.getCleanedTransitions();
                 auto constants = bigStepTransition.getConstantsAndOffsets();
                 auto p = bigStepTransition.getParameter();
                 
@@ -719,6 +734,7 @@ namespace storm {
                 for (auto const& pair : bigStepTransition.getVectorIndices()) {
                     lowerUpperIndicesToPair.push_back(pair.first);
                     auto f = transitions[pair.second[0]];
+                    auto cleanF = cleanedTransitions[pair.second[0]];
                     
                     ConstantType sumOfConstants = 0;
                     for (uint_fast64_t index : pair.second) {
@@ -734,9 +750,9 @@ namespace storm {
                     // Compute function values at left and right ends 
                     std::map<VariableType, CoefficientType> substitution;
                     substitution[p] = lowerPCoeff;
-                    auto left = utility::convertNumber<ConstantType>(f.evaluate(substitution));
+                    auto left = utility::convertNumber<ConstantType>(cleanF.evaluate(substitution));
                     substitution[p] = upperPCoeff;
-                    auto right = utility::convertNumber<ConstantType>(f.evaluate(substitution));
+                    auto right = utility::convertNumber<ConstantType>(cleanF.evaluate(substitution));
 
                     if (lowerP <= maxima[pair.first].first && upperP >= maxima[pair.first].first) {
                         // Case 1: The valuation is around the maximum of the function.
@@ -834,6 +850,7 @@ namespace storm {
                             for (auto const& i : transitionIndices) {
                                 ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + i];
                                 reference = (constants[i].first / sumsOfConstants[j]) * vertex[j] + constants[i].second;
+                                // std::cout << bigStepTransition.getTransitions()[i] << " -> " << reference << std::endl;
                             }
                         }
                     }

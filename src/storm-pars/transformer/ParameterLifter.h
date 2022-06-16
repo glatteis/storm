@@ -133,6 +133,8 @@ namespace storm {
                 
                 std::vector<storm::RationalFunction> const& getTransitions() const;
 
+                std::vector<storm::RationalFunction> const& getCleanedTransitions() const;
+
                 std::vector<std::pair<ConstantType, ConstantType>> const& getConstantsAndOffsets() const;
                 
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> const& getAsAndBs() const;
@@ -143,10 +145,11 @@ namespace storm {
             private:
                 VariableType const parameter;
                 
-                boost::optional<std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<ConstantType, ConstantType>>> tryDecomposing(RawPolynomial polynomial, bool firstIteration);
+                boost::optional<std::pair<std::pair<uint_fast64_t, uint_fast64_t>, std::pair<CoefficientType, CoefficientType>>> tryDecomposing(RawPolynomial polynomial, bool firstIteration);
                 
                 // The following vectors are indexed by the same indices
                 std::vector<storm::RationalFunction> const transitions;
+                std::vector<storm::RationalFunction> cleanedTransitions;
                 // Every transition of a bigStep valuation is p^a (1-p)^b - these are a and b
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> asAndBs;
                 // constants (so x * ...) and offsets (... + y)
