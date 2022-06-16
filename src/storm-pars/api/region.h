@@ -6,6 +6,7 @@
 #include <memory>
 #include <boost/optional.hpp>
 
+#include "solver/OptimizationDirection.h"
 #include "storm-pars/modelchecker/results/RegionCheckResult.h"
 #include "storm-pars/modelchecker/results/RegionRefinementCheckResult.h"
 #include "storm-pars/modelchecker/region/RegionCheckEngine.h"
@@ -28,6 +29,7 @@
 #include "storm/exceptions/UnexpectedException.h"
 #include "storm/exceptions/InvalidOperationException.h"
 #include "storm/exceptions/NotSupportedException.h"
+#include "utility/macros.h"
 
 namespace storm {
     
@@ -221,16 +223,31 @@ namespace storm {
         std::unique_ptr<storm::modelchecker::RegionCheckResult<ValueType>> checkRegionsWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, std::vector<storm::storage::ParameterRegion<ValueType>> const& regions, storm::modelchecker::RegionCheckEngine engine, std::vector<storm::modelchecker::RegionResultHypothesis> const& hypotheses, bool sampleVerticesOfRegions) {
             auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             Environment env;
+            // TODO @Linus Add this as function parameter
             bool allowModelSimplification = !regionSettings.isTimeTravellingEnabled();
             auto regionChecker = initializeRegionModelChecker(env, model, task, engine, false, allowModelSimplification);
             return regionChecker->analyzeRegions(env, regions, hypotheses, sampleVerticesOfRegions);
         }
-    
+
         template <typename ValueType>
         std::unique_ptr<storm::modelchecker::RegionCheckResult<ValueType>> checkRegionsWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, std::vector<storm::storage::ParameterRegion<ValueType>> const& regions, storm::modelchecker::RegionCheckEngine engine, storm::modelchecker::RegionResultHypothesis const& hypothesis = storm::modelchecker::RegionResultHypothesis::Unknown, bool sampleVerticesOfRegions = false) {
             std::vector<storm::modelchecker::RegionResultHypothesis> hypotheses(regions.size(), hypothesis);
             return checkRegionsWithSparseEngine(model, task, regions, engine, hypotheses, sampleVerticesOfRegions);
         }
+        
+        
+        // TODO @Linus Make this method work for general cases
+        template <typename ValueType>
+        std::unique_ptr<modelchecker::CheckResult> computeBoundsWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, storm::storage::ParameterRegion<ValueType> const& region, storm::modelchecker::RegionCheckEngine engine, OptimizationDirection optimizationDirection) {
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
+            Environment env;
+            bool allowModelSimplification = !regionSettings.isTimeTravellingEnabled();
+            auto regionChecker = initializeRegionModelChecker(env, model, task, engine, false, allowModelSimplification);
+            auto sparseChecker = dynamic_cast<storm::modelchecker::SparseDtmcParameterLiftingModelChecker<storm::models::sparse::Dtmc<ValueType>, double>*>(regionChecker.get());
+            STORM_LOG_ERROR_COND(sparseChecker, "Model checker cannot compute a bound.");
+            return sparseChecker->check(env, region, optimizationDirection, nullptr);
+        }
+    
     
         /*!
          * Checks and iteratively refines the given region with the sparse engine
@@ -260,9 +277,9 @@ namespace storm {
          */
         template <typename ValueType>
         std::pair<ValueType, typename storm::storage::ParameterRegion<ValueType>::Valuation> computeExtremalValue(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, storm::storage::ParameterRegion<ValueType> const& region, storm::modelchecker::RegionCheckEngine engine, storm::solver::OptimizationDirection const& dir, boost::optional<ValueType> const& precision, bool absolutePrecision, MonotonicitySetting monotonicitySetting, bool generateSplitEstimates = false, boost::optional<std::pair<std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>>>& monotoneParameters = boost::none) {
-            // TODO not import this maybe...
             auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             Environment env;
+            // TODO @Linus Add this as function parameter
             bool allowModelSimplification = !monotonicitySetting.useMonotonicity && !regionSettings.isTimeTravellingEnabled();
             bool preconditionsValidated = false;
             auto regionChecker = initializeRegionModelChecker(env, model, task, engine, generateSplitEstimates, allowModelSimplification, preconditionsValidated, monotonicitySetting, monotoneParameters);
@@ -279,9 +296,9 @@ namespace storm {
          */
         template <typename ValueType>
         bool checkExtremalValue(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, storm::storage::ParameterRegion<ValueType> const& region, storm::modelchecker::RegionCheckEngine engine, storm::solver::OptimizationDirection const& dir, boost::optional<ValueType> const& precision, bool absolutePrecision, ValueType const& suggestion, MonotonicitySetting monotonicitySetting, bool generateSplitEstimates = false,  boost::optional<std::pair<std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>, std::set<typename storm::storage::ParameterRegion<ValueType>::VariableType>>>& monotoneParameters = boost::none) {
-            // TODO not import this maybe...
             auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
             Environment env;
+            // TODO @Linus Add this as function parameter
             bool allowModelSimplification = !monotonicitySetting.useMonotonicity && !regionSettings.isTimeTravellingEnabled();
             bool preconditionsValidated = false;
             auto regionChecker = initializeRegionModelChecker(env, model, task, engine, generateSplitEstimates, allowModelSimplification, preconditionsValidated, monotonicitySetting, monotoneParameters);

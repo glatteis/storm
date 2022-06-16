@@ -344,7 +344,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
 
     transitionMatrix = flexibleMatrix.createSparseMatrix();
     
-    std::queue<uint_fast64_t> topologicalOrderingQueue;
+    std::stack<uint_fast64_t> topologicalOrderingQueue;
     topologicalOrdering = utility::graph::getTopologicalSort<RationalFunction>(transitionMatrix, {initialState});
     for (auto rit = topologicalOrdering.begin(); rit != topologicalOrdering.end(); ++rit) {
         topologicalOrderingQueue.push(*rit);
@@ -352,10 +352,13 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
 
     flexibleMatrix = storage::FlexibleSparseMatrix<RationalFunction>(transitionMatrix);
     
+    bool bigStepLiftingEnabled = true;
+    if (bigStepLiftingEnabled)
     while (!topologicalOrderingQueue.empty()) {
-        auto state = topologicalOrderingQueue.front();
+        auto state = topologicalOrderingQueue.top();
         topologicalOrderingQueue.pop();
         
+        [&] {
         for (auto const& oneStep : flexibleMatrix.getRow(state)) {
             if (!oneStep.getValue().isConstant()) {
                 auto variables = oneStep.getValue().gatherVariables();
@@ -414,10 +417,12 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                         }
                         workingSet = newWorkingSet;
                         flexibleMatrix = newMatrix;
+                        return;
                     }
                 }
             }
         }
+        }();
     }
     
     std::cout << flexibleMatrix << std::endl;
@@ -425,28 +430,38 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
     transitionMatrix = flexibleMatrix.createSparseMatrix();
     backwardsTransitions = transitionMatrix.transpose(true);
     
+    
     // Identify deletable states
-    storage::BitVector deletableStates(transitionMatrix.getRowCount());
-    for (uint_fast64_t row = 0; row < backwardsTransitions.getRowCount(); row++) {
-        if (backwardsTransitions.getRow(row).getNumberOfEntries() == 0 && row != initialState) {
-            deletableStates.set(row, true);
+    storage::BitVector trueVector(transitionMatrix.getRowCount(), true);
+    storage::BitVector falseVector(transitionMatrix.getRowCount(), false);
+    storage::BitVector initialStates(transitionMatrix.getRowCount(), false);
+    initialStates.set(initialState, true);
+    storage::BitVector reachableStates = storm::utility::graph::getReachableStates(transitionMatrix, initialStates, trueVector, falseVector);
+    
+    transitionMatrix = transitionMatrix.getSubmatrix(false, reachableStates, reachableStates);
+    runningLabeling = runningLabeling.getSubLabeling(reachableStates);
+    
+    uint_fast64_t newInitialState = 0;
+    for (uint_fast64_t i = 0; i < initialState; i++) {
+        if (reachableStates.get(i)) {
+            newInitialState++;
         }
     }
-    
-    deletableStates.complement();
-    transitionMatrix = transitionMatrix.getSubmatrix(false, deletableStates, deletableStates);
-    runningLabeling = runningLabeling.getSubLabeling(deletableStates);
-    
+
     if (stateRewardVector) {
         std::vector<RationalFunction> newStateRewardVector(transitionMatrix.getRowCount());
         for (uint_fast64_t i = 0; i < stateRewardVector->size(); i++) {
-            if (deletableStates.get(i)) {
+            if (reachableStates.get(i)) {
                 newStateRewardVector.push_back(stateRewardVector->at(i));
             }
         }
     }
 
     models::sparse::Dtmc<RationalFunction> newDTMC(transitionMatrix, runningLabeling);
+
+    storage::BitVector newInitialStates(transitionMatrix.getRowCount());
+    newInitialStates.set(newInitialState, true);
+    newDTMC.setInitialStates(newInitialStates);
 
     if (stateRewardVector) {
         models::sparse::StandardRewardModel<RationalFunction> newRewardModel(*stateRewardVector);
@@ -459,7 +474,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
     // newDTMC = *simplifier.getSimplifiedModel()->template as<models::sparse::Dtmc<RationalFunction>>();
     // newDTMC.writeDotToStream(std::cout);
     STORM_LOG_ASSERT(newDTMC.getTransitionMatrix().isProbabilistic(), "Internal error: resulting matrix not probabilistic!");
-
+    
     return newDTMC;
 }
 

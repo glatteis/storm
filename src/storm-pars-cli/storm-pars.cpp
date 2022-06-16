@@ -1,3 +1,6 @@
+#include "modelchecker/results/ExplicitQualitativeCheckResult.h"
+#include "modelchecker/results/ExplicitQuantitativeCheckResult.h"
+#include "solver/OptimizationDirection.h"
 #include "storm-cli-utilities/cli.h"
 #include "storm-cli-utilities/model-handling.h"
 
@@ -433,7 +436,23 @@ namespace storm {
                     outStream << '\n';
                     STORM_PRINT_AND_LOG(outStream.str());
                 } else {
-                    STORM_PRINT_AND_LOG(*result << '\n');
+                    auto const* explicitQuantitativeResult = dynamic_cast<storm::modelchecker::ExplicitQuantitativeCheckResult<double> const*>(regionCheckResult);
+                    if (explicitQuantitativeResult) {
+                        // TODO @Linus make this general (currently just wrote this to debug incorrect values)
+                        std::cout << "{";
+                        bool first = true;
+                        for (auto const& element : explicitQuantitativeResult->getValueVector()) {
+                            if (!first) {
+                                std::cout << ", ";
+                            } else {
+                                first = false;
+                            }
+                            std::cout << element;
+                        }
+                        std::cout << "}\n";
+                    } else {
+                        STORM_PRINT_AND_LOG(*result << '\n');
+                    }
                 }
                 if (watch) {
                     STORM_PRINT_AND_LOG("Time for model checking: " << *watch << ".\n\n");
@@ -893,7 +912,13 @@ namespace storm {
             } else {
                 STORM_PRINT_AND_LOG(".\n");
                 verificationCallback = [&] (std::shared_ptr<storm::logic::Formula const> const& formula) {
-                    std::unique_ptr<storm::modelchecker::CheckResult> result = storm::api::checkRegionsWithSparseEngine<ValueType>(model, storm::api::createTask<ValueType>(formula, true), regions, engine, regionSettings.getHypothesis());
+                    auto const& checkTask = storm::api::createTask<ValueType>(formula, true);
+                    std::unique_ptr<storm::modelchecker::CheckResult> result;
+                    if (checkTask.isBoundSet()) {
+                        result = storm::api::checkRegionsWithSparseEngine<ValueType>(model, checkTask, regions, engine, {regionSettings.getHypothesis()}, false);
+                    } else {
+                        result = storm::api::computeBoundsWithSparseEngine(model, checkTask, regions[0], engine, OptimizationDirection::Maximize);
+                    }
                     return result;
                 };
             }

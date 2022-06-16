@@ -56,12 +56,12 @@ namespace storm {
             uint_fast64_t newRowIndex = 0;
             uint_fast64_t countNonParam = 0;
             
-            std::cout << pMatrix << std::endl;
+            // std::cout << pMatrix << std::endl;
             
-            for (auto const& entry : pVector) {
-                std::cout << entry << " ";
-            }
-            std::cout << std::endl;
+            // for (auto const& entry : pVector) {
+            //     std::cout << entry << " ";
+            // }
+            // std::cout << std::endl;
 
             for (auto const& rowIndex : selectedRows) {
                 builder.newRowGroup(newRowIndex);
@@ -163,7 +163,7 @@ namespace storm {
                     std::vector<RationalFunction> functions;
                     // std::cout << pMatrix << std::endl;
                     for (auto const& entry : pMatrix.getRow(rowIndex)) {
-                        if (!entry.getValue().isZero()) {
+                        if (!entry.getValue().isZero() && !entry.getValue().isConstant()) {
                             functions.push_back(entry.getValue());
                         }
                     }
@@ -184,8 +184,8 @@ namespace storm {
                     for (uint_fast64_t i = 0; i < numOfVertices; i++) {
                         for (auto const& entry: pMatrix.getRow(rowIndex)) {
                             if(selectedColumns.get(entry.getColumn())) {
-                                if(storm::utility::isConstant(entry.getValue())) {
-                                    STORM_LOG_ERROR("Constant values in big-step valuations currently not supported.");
+                                if (storm::utility::isConstant(entry.getValue())) {
+                                    builder.addNextValue(newRowIndex, oldToNewColumnIndexMapping[entry.getColumn()], utility::convertNumber<ConstantType>(entry.getValue()));
                                 } else {
                                     ConstantType& placeholder = *placeholdersIterator;
                                     builder.addNextValue(newRowIndex, oldToNewColumnIndexMapping[entry.getColumn()], storm::utility::one<ConstantType>());
@@ -274,12 +274,11 @@ namespace storm {
                 *assignment.first = assignment.second;
             
             }
-            std::cout << matrix << std::endl;
-            for (auto const& entry : vector) {
-                std::cout << entry << " ";
-            }
-            std::cout << std::endl;
-            STORM_LOG_ASSERT(matrix.isProbabilistic(), "Matrix not probabilistic!");
+            // std::cout << matrix << std::endl;
+            // for (auto const& entry : vector) {
+            //     std::cout << entry << " ";
+            // }
+            // std::cout << std::endl;
         }
 
         template<typename ParametricType, typename ConstantType>
@@ -812,9 +811,9 @@ namespace storm {
                 // std::cout << std::endl;
 
                 // Compute how many unique rows there are in total
-                uint_fast64_t numUniqueRows = 0;
+                uint_fast64_t numUniqueColumns = 0;
                 for (auto const& aAndB : lowerUpperIndicesToPair) {
-                    numUniqueRows += bigStepTransition.getVectorIndices().at(aAndB).size();
+                    numUniqueColumns += bigStepTransition.getVectorIndices().at(aAndB).size();
                 }
                 
                 // Modulo through the vertices so that we populate every row
@@ -828,7 +827,7 @@ namespace storm {
                     vertex.push_back(lastValue);
 
                     uint_fast64_t numberOfRows = placeholders.size() / bigStepTransition.getNumTransitions();
-                    for (uint_fast64_t row = vertexIndex; row < numberOfRows; row += numUniqueRows) {
+                    for (uint_fast64_t row = vertexIndex; row < numberOfRows; row += vertices.size()) {
                         for (uint_fast64_t j = 0; j < vertex.size(); j++) {
                             auto aAndB = lowerUpperIndicesToPair[j];
                             auto transitionIndices = bigStepTransition.getVectorIndices().at(aAndB);
