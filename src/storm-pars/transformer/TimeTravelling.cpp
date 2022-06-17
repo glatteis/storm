@@ -28,7 +28,7 @@
 #include "utility/graph.h"
 #include "utility/macros.h"
 
-#define WRITE_DTMCS 1
+#define WRITE_DTMCS 0
 
 namespace storm {
 namespace transformer {
@@ -330,15 +330,9 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
 
     }
 
+    updateTreeStates(treeStates, workingSets, flexibleMatrix, allParameters, stateRewardVector, runningLabeling, labelsInFormula, true);
 
     transitionMatrix = flexibleMatrix.createSparseMatrix();
-    
-    // Identify reachable states - not reachable states do not have do be big-stepped 
-    storage::BitVector trueVector(transitionMatrix.getRowCount(), true);
-    storage::BitVector falseVector(transitionMatrix.getRowCount(), false);
-    storage::BitVector initialStates(transitionMatrix.getRowCount(), false);
-    initialStates.set(initialState, true);
-    storage::BitVector reachableStates = storm::utility::graph::getReachableStates(transitionMatrix, initialStates, trueVector, falseVector);
     
     std::stack<uint_fast64_t> topologicalOrderingQueue;
     topologicalOrdering = utility::graph::getTopologicalSort<RationalFunction>(transitionMatrix, {initialState});
@@ -368,6 +362,15 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         auto state = topologicalOrderingQueue.top();
         topologicalOrderingQueue.pop();
         
+        transitionMatrix = flexibleMatrix.createSparseMatrix();
+
+        // Identify reachable states - not reachable states do not have do be big-stepped 
+        storage::BitVector trueVector(transitionMatrix.getRowCount(), true);
+        storage::BitVector falseVector(transitionMatrix.getRowCount(), false);
+        storage::BitVector initialStates(transitionMatrix.getRowCount(), false);
+        initialStates.set(initialState, true);
+        storage::BitVector reachableStates = storm::utility::graph::getReachableStates(transitionMatrix, initialStates, trueVector, falseVector);
+
         if (!reachableStates.get(state)) {
             continue;
         }
@@ -395,7 +398,6 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         
         // Do big-step lifting from here
         // Just follow the treeStates and eliminate transitions
-        // It is already jip-converted, so the next parametric transition is <=2 steps away
         
         auto parameterMap = treeStates.at(*parameter);
         std::set<uint_fast64_t> statesToReach;
@@ -404,6 +406,8 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                 statesToReach.emplace(stateToReach);
             }
         }
+        
+        std::cout << "BigStepping " << state << std::endl;
         
         struct searchingPath {
             std::vector<uint_fast64_t> path;
@@ -416,12 +420,14 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         
         searchingPaths.push_back(searchingPath{{state}, utility::one<RationalFunction>()});
         
+        std::map<carl::Variable, std::set<uint_fast64_t>> alreadyBigStepped;
+        
         while (!searchingPaths.empty()) {
             std::vector<searchingPath> newPaths;
             for (auto const& path : searchingPaths) {
                 for (auto const& entry : flexibleMatrix.getRow(path.path.back())) {
                     bool continueSearching = false;
-                    continueSearching |= statesToReach.count(entry.getColumn());
+                    // continueSearching |= statesToReach.count(entry.getColumn());
                     for (auto const& stateToReach : statesToReach) {
                         if (parameterMap[entry.getColumn()].count(stateToReach)) {
                             continueSearching = true;
@@ -429,6 +435,9 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                         }
                     }
                     continueSearching &= std::find(path.path.begin(), path.path.end(), entry.getColumn()) == path.path.end();
+                    continueSearching &= !alreadyBigStepped[*parameter].count(entry.getColumn());
+                    continueSearching &= !(stateRewardVector && !stateRewardVector->at(entry.getColumn()).isZero());
+                    continueSearching &= path.probability.nominator().totalDegree() < 5;
                     
                     std::vector<uint_fast64_t> pathCopy = path.path;
                     pathCopy.push_back(entry.getColumn());
@@ -438,7 +447,7 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
                         newPaths.push_back(newPath);
                     } else {
                         donePaths.push_back(newPath);
-                        std::cout << "done: " << newPath.probability << std::endl;
+                        std::cout << "Done BigStep: " << newPath.probability << std::endl;
                     }
                 }
             }
@@ -447,6 +456,9 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         
         flexibleMatrix.getRow(state) = std::vector<storage::MatrixEntry<uint_fast64_t, RationalFunction>>();
         for (auto const& path : donePaths) {
+            for (auto const& entry : path.path) {
+                alreadyBigStepped[*parameter].emplace(entry);
+            }
             flexibleMatrix.getRow(state).push_back(storm::storage::MatrixEntry(path.path.back(), path.probability));
         }
     
@@ -463,11 +475,8 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
             }
         }
     }
-    
-    std::cout << flexibleMatrix << std::endl;
-    
+
     transitionMatrix = flexibleMatrix.createSparseMatrix();
-    backwardsTransitions = transitionMatrix.transpose(true);
     
     
     // Delete states (2)
@@ -487,10 +496,12 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
         }
         initialState = newInitialState;
         if (stateRewardVector) {
-            std::vector<RationalFunction> newStateRewardVector(transitionMatrix.getRowCount());
+            std::vector<RationalFunction> newStateRewardVector;
             for (uint_fast64_t i = 0; i < stateRewardVector->size(); i++) {
                 if (reachableStates.get(i)) {
                     newStateRewardVector.push_back(stateRewardVector->at(i));
+                } else {
+                    STORM_LOG_ERROR_COND(stateRewardVector->at(i).isZero(), "Deleted non-zero reward.");
                 }
             }
             stateRewardVector = newStateRewardVector;
@@ -628,7 +639,8 @@ void TimeTravelling::updateTreeStates(std::map<RationalFunctionVariable, std::ma
                                       std::map<RationalFunctionVariable, std::set<uint_fast64_t>>& workingSets,
                                       storage::FlexibleSparseMatrix<RationalFunction>& flexibleMatrix, const std::set<carl::Variable>& allParameters,
                                       const boost::optional<std::vector<RationalFunction>>& stateRewardVector,
-                                      const models::sparse::StateLabeling stateLabeling, const std::set<std::string> labelsInFormula) {
+                                      const models::sparse::StateLabeling stateLabeling, const std::set<std::string> labelsInFormula,
+                                      bool bigStepMode) {
     auto backwardsTransitions = flexibleMatrix.createSparseMatrix().transpose(true);
     for (auto const& parameter : allParameters) {
         std::set<uint_fast64_t> workingSet = workingSets[parameter];
@@ -639,7 +651,7 @@ void TimeTravelling::updateTreeStates(std::map<RationalFunctionVariable, std::ma
                     continue;
                 }
                 for (auto const& entry : backwardsTransitions.getRow(row)) {
-                    if (entry.getValue().isConstant() &&
+                    if ((entry.getValue().isConstant() || (bigStepMode && *entry.getValue().gatherVariables().begin() == parameter)) &&
                         labelsIntersectedEqual(stateLabeling.getLabelsOfState(entry.getColumn()), stateLabeling.getLabelsOfState(row), labelsInFormula)) {
                         // If the set of tree states at the current position is a subset of the set of
                         // tree states of the parent state, we've reached some loop. Then we can stop.

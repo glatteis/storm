@@ -162,17 +162,32 @@ namespace storm {
                     // Big-step valuation -> get all vertices from the valuation and insert them in some order
                     STORM_LOG_ERROR_COND(occurringVariables.size() == 1, "Transitions need to be univariate or linear.");
                     std::vector<RationalFunction> functions;
+                    std::vector<uint_fast64_t> oldMatrixPositions;
                     // std::cout << pMatrix << std::endl;
+                    CoefficientType sumOfConstantTransitions = 0;
                     for (auto const& entry : pMatrix.getRow(rowIndex)) {
                         if (!entry.getValue().isZero() && !entry.getValue().isConstant()) {
                             functions.push_back(entry.getValue());
+                            oldMatrixPositions.push_back(entry.getColumn());
+                        } else {
+                            sumOfConstantTransitions += utility::convertNumber<CoefficientType>(entry.getValue());
                         }
                     }
-                    // if (!storm::utility::isConstant(pVectorEntry)) {
-                    //     functions.push_back(pVectorEntry);
-                    // }
+                    if (!storm::utility::isConstant(pVectorEntry)) {
+                        for (auto const& entry : pMatrix.getRow(rowIndex)) {
+                            std::cout << entry.getValue() << " + ";
+                        }
+                        std::cout << pVectorEntry << std::endl;
+                        STORM_LOG_ERROR("Non-constant vector entry!! Panic!");
+                    } else {
+                        for (auto const& entry : pMatrix.getRow(rowIndex)) {
+                            std::cout << entry.getValue() << " + "; 
+                        }
+                        std::cout << pVectorEntry << std::endl;
+                        sumOfConstantTransitions += utility::convertNumber<CoefficientType>(pVectorEntry);
+                    }
                     
-                    auto val = BigStepAbstractValuation(*occurringVariables.begin(), functions);
+                    auto val = BigStepAbstractValuation(*occurringVariables.begin(), functions, oldMatrixPositions, sumOfConstantTransitions);
                     
                     // Create 2^(n+1) vertices
                     std::size_t const numOfVertices = std::pow(2, val.getVectorIndices().size() + 1);
@@ -183,6 +198,7 @@ namespace storm {
                     auto placeholdersIterator = placeholders.begin();
 
                     for (uint_fast64_t i = 0; i < numOfVertices; i++) {
+                        RationalFunction sumOfNotCollectedFunctions = utility::zero<RationalFunction>();
                         bool addedNonConstantVectorEntry = false;
                         for (auto const& entry: pMatrix.getRow(rowIndex)) {
                             if(selectedColumns.get(entry.getColumn())) {
@@ -194,7 +210,6 @@ namespace storm {
                                     matrixAssignment.push_back(std::pair<typename storm::storage::SparseMatrix<ConstantType>::iterator, ConstantType&>(typename storm::storage::SparseMatrix<ConstantType>::iterator(), placeholder));
                                     countPlaceHolders++;
                                     placeholdersIterator++;
-                                    
                                 }
                             } else if (entry.getValue() == pVectorEntry) {
                                 addedNonConstantVectorEntry = true;
@@ -203,20 +218,26 @@ namespace storm {
                                 vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(typename std::vector<ConstantType>::iterator(), placeholder));
                                 countPlaceHolders++;
                                 placeholdersIterator++;
+                                sumOfNotCollectedFunctions += entry.getValue();
                             } else {
                                 countPlaceHolders++;
                                 placeholdersIterator++;
+                                sumOfNotCollectedFunctions += entry.getValue();
                             }
                         }
                         // Insert the vector entry for this row
                         if (storm::utility::isConstant(pVectorEntry)) {
                             vector.push_back(storm::utility::convertNumber<ConstantType>(pVectorEntry));
                         } else {
-                            STORM_LOG_ASSERT(addedNonConstantVectorEntry, "Non-constant vector entry but did not add it");
-                            // ConstantType& placeholder = *placeholdersIterator;
-                            // vector.push_back(storm::utility::one<ConstantType>());
-                            // vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(std::move(typename std::vector<ConstantType>::iterator()), placeholder));
-                            // countPlaceHolders++;
+                            STORM_LOG_ERROR_COND(addedNonConstantVectorEntry, "Non-constant vector entry but did not add it");
+                            std::cout << "Sum of not collected functions: "  << sumOfNotCollectedFunctions << std::endl;
+                            // if (!addedNonConstantVectorEntry) {
+                            //     ConstantType& placeholder = *placeholdersIterator;
+                            //     vector.push_back(storm::utility::one<ConstantType>());
+                            //     vectorAssignment.push_back(std::pair<typename std::vector<ConstantType>::iterator, ConstantType&>(std::move(typename std::vector<ConstantType>::iterator()), placeholder));
+                            //     countPlaceHolders++;
+                            //     placeholdersIterator++;
+                            // }
                         }
                         ++newRowIndex;
                     }
@@ -452,7 +473,7 @@ namespace storm {
         }
 
         template<typename ParametricType, typename ConstantType>
-        ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::BigStepAbstractValuation(VariableType const parameter, std::vector<storm::RationalFunction> const transitions): parameter(parameter), transitions(transitions) {
+        ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::BigStepAbstractValuation(VariableType const parameter, std::vector<storm::RationalFunction> const transitions, std::vector<uint_fast64_t> oldMatrixPositions, CoefficientType sumOfConstantTransitions): parameter(parameter), transitions(transitions), oldMatrixPositions(oldMatrixPositions), sumOfConstantTransitions(sumOfConstantTransitions) {
             for (uint_fast64_t i = 0; i < transitions.size(); i++) {
                 RationalFunction transition = transitions[i];
                 std::set<VariableType> occurringVariables;
@@ -464,8 +485,6 @@ namespace storm {
             
                 transition.simplify();
                 auto constantPart = transition.constantPart();
-                std::cout << transition << std::endl;
-                std::cout << constantPart << std::endl;
 
                 CoefficientType denominator = transition.denominator().constantPart();
 
@@ -473,56 +492,8 @@ namespace storm {
                 
                 auto p = *occurringVariables.begin();
                 
-
-                
-                // auto result1 = nominator.divideBy(parameter);
-                // auto result2 = nominator.divideBy(oneMinusParameter);
-                
-                // std::cout << "p: " << result1.quotient << ", " << result1.remainder << std::endl;
-                // std::cout << "1-p: " << result2.quotient << ", " << result2.remainder << std::endl;
-
                 RawPolynomial currentNominator = nominator;
-                
-                // std::cout << result.quotient << ", " << result.remainder << std::endl;
 
-
-                // ConstantType offset = utility::zero<ConstantType>();
-                // if (nominator.trailingTerm().isConstant()) {
-                //     auto coeff = nominator.trailingTerm().coeff();
-                //     offset = utility::convertNumber<ConstantType>(coeff / denominator);
-                //     transition -= coeff;
-                // }
-
-                // transition.simplify();
-                
-                
-                // auto factorization = carl::factorization(nominator);
-                
-                // ConstantType offset = utility::zero<ConstantType>();
-                // // if (factorization.size() == 1 && factorization.begin()->first != parameter && factorization.begin()->first != oneMinusParameter) {
-                // if (factorization.size() == 1 && nominator.nrTerms() > 1) {
-                //     auto offsetAsCln = nominator.constantPart();
-                //     nominator -= offsetAsCln;
-                //     factorization = carl::factorization(nominator);
-                //     offset = utility::convertNumber<ConstantType>(offsetAsCln / denominator);
-                // }
-                
-                // auto parameter = RawPolynomial(p);
-                // auto oneMinusParameter = RawPolynomial(1) - parameter;
-                // uint_fast64_t a = 0;
-                // uint_fast64_t b = 0;
-                // ConstantType constant = utility::one<ConstantType>();
-                // for (auto const& element : factorization) {
-                //     if (element.first == parameter) {
-                //         a = element.second;       
-                //     } else if (element.first == oneMinusParameter || element.first == -oneMinusParameter) {
-                //         b = element.second;
-                //     } else if (element.first.isConstant()) {
-                //         constant = utility::abs(utility::convertNumber<ConstantType>(element.first.constantPart() / denominator));
-                //     }
-                
-                // }
-                // 
                 auto result = tryDecomposing(nominator, true);
                 
                 STORM_LOG_ASSERT(result, "Polynomial had no decomposition.");
@@ -629,6 +600,16 @@ namespace storm {
         }
 
         template<typename ParametricType, typename ConstantType>
+        typename storm::utility::parametric::CoefficientType<ParametricType>::type const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getSumOfConstantTransitions() const {
+            return this->sumOfConstantTransitions;
+        }
+
+        template<typename ParametricType, typename ConstantType>
+        std::vector<uint_fast64_t> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getOldMatrixPositions() const {
+            return this->oldMatrixPositions;
+        }
+
+        template<typename ParametricType, typename ConstantType>
         std::vector<RationalFunction> const& ParameterLifter<ParametricType, ConstantType>::BigStepAbstractValuation::getCleanedTransitions() const {
             return this->cleanedTransitions;
         }
@@ -724,6 +705,8 @@ namespace storm {
                 auto constants = bigStepTransition.getConstantsAndOffsets();
                 auto p = bigStepTransition.getParameter();
                 
+                ConstantType sumOfOffsets = utility::convertNumber<ConstantType>(bigStepTransition.getSumOfConstantTransitions());
+                
                 // The functions we consider are always p^a * (1-p)^b.
                 // These always have a maximum at a / (a + b), are monotone increasing before and monotone decreasing after.
                 // So we are using a case distinction to compute the lower and upper bounds.
@@ -739,6 +722,7 @@ namespace storm {
                     ConstantType sumOfConstants = 0;
                     for (uint_fast64_t index : pair.second) {
                         sumOfConstants += constants[index].first;
+                        sumOfOffsets += constants[index].second;
                     }
                     sumsOfConstants[i] = sumOfConstants;
 
@@ -772,15 +756,7 @@ namespace storm {
                     i++;
                 }
                 
-                // lowerBounds[i] *= constants[i].first;
-                // upperBounds[i] *= constants[i].first;
-
-                // lowerBounds[i] += constants[i].second;
-                // upperBounds[i] += constants[i].second;
-                
-                // std::cout << "aa" << std::endl;
                 // Build the polytope
-                // 
                 uint_fast64_t numHalfspaces = bigStepTransition.getVectorIndices().size();
 
                 std::vector<storage::geometry::Halfspace<ConstantType>> halfspaces;
@@ -807,8 +783,8 @@ namespace storm {
                     normalVectorLowerLast[i] = utility::one<ConstantType>();
                     normalVectorUpperLast[i] = -utility::one<ConstantType>();
                 }
-                storage::geometry::Halfspace<ConstantType> lowerHalfspaceLast(normalVectorLowerLast, -lowerBounds[numHalfspaces - 1] + utility::one<ConstantType>());
-                storage::geometry::Halfspace<ConstantType> upperHalfspaceLast(normalVectorUpperLast, upperBounds[numHalfspaces - 1] - utility::one<ConstantType>());
+                storage::geometry::Halfspace<ConstantType> lowerHalfspaceLast(normalVectorLowerLast, -lowerBounds[numHalfspaces - 1] * sumsOfConstants[numHalfspaces - 1] + utility::one<ConstantType>() + sumOfOffsets);
+                storage::geometry::Halfspace<ConstantType> upperHalfspaceLast(normalVectorUpperLast, upperBounds[numHalfspaces - 1] * sumsOfConstants[numHalfspaces - 1] - utility::one<ConstantType>() - sumOfOffsets);
 
                 halfspaces.push_back(lowerHalfspaceLast);
                 halfspaces.push_back(upperHalfspaceLast);
@@ -836,7 +812,7 @@ namespace storm {
                 for (uint_fast64_t vertexIndex = 0; vertexIndex < vertices.size(); vertexIndex++) {
                     auto vertex = vertices[vertexIndex];
 
-                    ConstantType lastValue = 1;
+                    ConstantType lastValue = 1 - sumOfOffsets;
                     for (auto const& value : vertex) {
                         lastValue -= value;
                     }
@@ -844,15 +820,18 @@ namespace storm {
 
                     uint_fast64_t numberOfRows = placeholders.size() / bigStepTransition.getNumTransitions();
                     for (uint_fast64_t row = vertexIndex; row < numberOfRows; row += vertices.size()) {
+                        ConstantType sumOfProbabilities = 0;
                         for (uint_fast64_t j = 0; j < vertex.size(); j++) {
                             auto aAndB = lowerUpperIndicesToPair[j];
                             auto transitionIndices = bigStepTransition.getVectorIndices().at(aAndB);
                             for (auto const& i : transitionIndices) {
                                 ConstantType& reference = placeholders[row * bigStepTransition.getNumTransitions() + i];
                                 reference = (constants[i].first / sumsOfConstants[j]) * vertex[j] + constants[i].second;
+                                sumOfProbabilities += reference;
                                 // std::cout << bigStepTransition.getTransitions()[i] << " -> " << reference << std::endl;
                             }
                         }
+                        STORM_LOG_ERROR_COND(utility::isAlmostOne(sumOfProbabilities), "Sum of probabilities is " << sumOfProbabilities << "!");
                     }
                 }
             }

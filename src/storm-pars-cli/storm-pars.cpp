@@ -436,7 +436,7 @@ namespace storm {
                     outStream << '\n';
                     STORM_PRINT_AND_LOG(outStream.str());
                 } else {
-                    auto const* explicitQuantitativeResult = dynamic_cast<storm::modelchecker::ExplicitQuantitativeCheckResult<double> const*>(regionCheckResult);
+                    auto const* explicitQuantitativeResult = dynamic_cast<storm::modelchecker::ExplicitQuantitativeCheckResult<double> const*>(result.get());
                     if (explicitQuantitativeResult) {
                         // TODO @Linus make this general (currently just wrote this to debug incorrect values)
                         std::cout << "{";

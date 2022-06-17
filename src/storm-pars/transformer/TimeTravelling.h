@@ -25,7 +25,7 @@ class TimeTravelling {
                               std::map<RationalFunctionVariable, std::set<uint_fast64_t>>& workingSets,
                               storage::FlexibleSparseMatrix<RationalFunction>& flexibleMatrix, const std::set<carl::Variable>& allParameters,
                               const boost::optional<std::vector<RationalFunction>>& stateRewardVector, const models::sparse::StateLabeling stateLabelling,
-                              const std::set<std::string> labelsInFormula);
+                              const std::set<std::string> labelsInFormula, bool bigStepMode = false);
 
         storage::FlexibleSparseMatrix<RationalFunction> duplicateTransitionsOntoNewStates(
                 storage::FlexibleSparseMatrix<RationalFunction> const& matrix,

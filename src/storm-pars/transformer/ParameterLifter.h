@@ -121,7 +121,7 @@ namespace storm {
             
             class BigStepAbstractValuation {
             public:
-                BigStepAbstractValuation(VariableType const parameter, std::vector<storm::RationalFunction> const transitions);
+                BigStepAbstractValuation(VariableType const parameter, std::vector<storm::RationalFunction> const transitions, std::vector<uint_fast64_t> const oldMatrixPositions, CoefficientType sumOfConstantTransitions);
                 BigStepAbstractValuation(BigStepAbstractValuation const& other) = default;
                 bool operator==(BigStepAbstractValuation const& other) const;
                 
@@ -133,9 +133,13 @@ namespace storm {
                 
                 std::vector<storm::RationalFunction> const& getTransitions() const;
 
+                std::vector<uint_fast64_t> const& getOldMatrixPositions() const;
+
                 std::vector<storm::RationalFunction> const& getCleanedTransitions() const;
 
                 std::vector<std::pair<ConstantType, ConstantType>> const& getConstantsAndOffsets() const;
+
+                CoefficientType const& getSumOfConstantTransitions() const;
                 
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> const& getAsAndBs() const;
                 
@@ -150,10 +154,13 @@ namespace storm {
                 // The following vectors are indexed by the same indices
                 std::vector<storm::RationalFunction> const transitions;
                 std::vector<storm::RationalFunction> cleanedTransitions;
+                std::vector<uint_fast64_t> const oldMatrixPositions;
                 // Every transition of a bigStep valuation is p^a (1-p)^b - these are a and b
                 std::vector<std::pair<uint_fast64_t, uint_fast64_t>> asAndBs;
                 // constants (so x * ...) and offsets (... + y)
                 std::vector<std::pair<ConstantType, ConstantType>> constantsAndOffsets;
+                
+                CoefficientType sumOfConstantTransitions;
 
                 // When computing the values, transitions with the same as and bs will be set to equal in the polytope,
                 // and they have the same maxima, so the following are indexed by as and bs
