@@ -1,5 +1,6 @@
 #include "modelchecker/results/ExplicitQualitativeCheckResult.h"
 #include "modelchecker/results/ExplicitQuantitativeCheckResult.h"
+#include "models/sparse/Pomdp.h"
 #include "solver/OptimizationDirection.h"
 #include "storm-cli-utilities/cli.h"
 #include "storm-cli-utilities/model-handling.h"
@@ -26,6 +27,7 @@
 #include "storm-pars/derivative/GradientDescentMethod.h"
 
 #include "storm-parsers/parser/KeyValueParser.h"
+#include "storm-pars/transformer/BinaryDtmcTransformer.h"
 #include "storm/api/storm.h"
 
 #include "storm/exceptions/BaseException.h"
@@ -302,26 +304,33 @@ namespace storm {
                 result.changed = true;
             }
 
+
             if (regionSettings.isTimeTravellingEnabled()) {
                 result.changed = true;
-                auto oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
-                for (uint_fast64_t i = 0; i < 1; i++) {
-                    if (mpi.applyBisimulation) {
-                        result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
-                    }
+                // auto oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
+                // for (uint_fast64_t i = 0; i < 1; i++) {
+                //     if (mpi.applyBisimulation) {
+                //         result.model = storm::cli::preprocessSparseModelBisimulation(result.model->template as<storm::models::sparse::Model<ValueType>>(), input, bisimulationSettings);
+                //     }
 
-                    transformer::TimeTravelling reducer;
-                    auto formulas = storm::api::extractFormulasFromProperties(input.properties);
-                    modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> checkTask(*formulas[0]);
-                    result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(
-                        reducer.timeTravel(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask));
+                storm::transformer::BinaryDtmcTransformer transformer;
+                result.model = transformer.transform(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), true);
+                result.changed = true;
+                
 
-                    if (result.model.get()->getNumberOfStates() == oldModel.getNumberOfStates()) {
-                        std::cout << "Same, breaking" << std::endl;
-                        break;
-                    }
-                    oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
-                }
+                transformer::TimeTravelling reducer;
+                auto formulas = storm::api::extractFormulasFromProperties(input.properties);
+                modelchecker::CheckTask<storm::logic::Formula, storm::RationalNumber> checkTask(*formulas[0]);
+                result.model = std::make_shared<storm::models::sparse::Dtmc<RationalFunction>>(
+                    reducer.timeTravel(*result.model->template as<storm::models::sparse::Dtmc<RationalFunction>>(), checkTask, regionSettings.isBigStepEnabled()));
+                result.changed = true;
+
+                //     if (result.model.get()->getNumberOfStates() == oldModel.getNumberOfStates()) {
+                //         std::cout << "Same, breaking" << std::endl;
+                //         break;
+                //     }
+                //     oldModel = *result.model->as<storm::models::sparse::Dtmc<RationalFunction>>();
+                // }
             }
 
             if (transformationSettings.isChainEliminationSet() &&

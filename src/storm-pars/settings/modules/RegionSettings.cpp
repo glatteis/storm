@@ -29,8 +29,8 @@ namespace storm {
             const std::string RegionSettings::printNoIllustrationOptionName = "noillustration";
             const std::string RegionSettings::printFullResultOptionName = "printfullresult";
             const std::string RegionSettings::timeTravellingEnabledName = "time-travel";
+            const std::string RegionSettings::bigStepEnabledName = "big-step";
 
-            
             RegionSettings::RegionSettings() : ModuleSettings(moduleName) {
                 this->addOption(storm::settings::OptionBuilder(moduleName, regionOptionName, false, "Sets the region(s) considered for analysis.").setShortName(regionShortOptionName)
                                 .addArgument(storm::settings::ArgumentBuilder::createStringArgument("regioninput", "The region(s) given in format a<=x<=b,c<=y<=d seperated by ';'. Can also be a file.").build()).build());
@@ -68,6 +68,8 @@ namespace storm {
                 this->addOption(storm::settings::OptionBuilder(moduleName, printFullResultOptionName, false, "If set, the full result for every region is printed.").build());
                 
                 this->addOption(storm::settings::OptionBuilder(moduleName, timeTravellingEnabledName, false, "Enabled time travelling (flip transitions to improve PLA bounds).").build());
+                this->addOption(
+                    storm::settings::OptionBuilder(moduleName, bigStepEnabledName, false, "Use big-step (if time travelling is enabled).").build());
             }
             
             bool RegionSettings::isRegionSet() const {
@@ -215,6 +217,10 @@ namespace storm {
 
             bool RegionSettings::isTimeTravellingEnabled() const {
                 return this->getOption(timeTravellingEnabledName).getHasOptionBeenSet();
+            }
+
+            bool RegionSettings::isBigStepEnabled() const {
+                return this->getOption(bigStepEnabledName).getHasOptionBeenSet();
             }
 
         } // namespace modules

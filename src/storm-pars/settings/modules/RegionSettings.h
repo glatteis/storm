@@ -112,7 +112,9 @@ namespace storm {
                 bool isPrintFullResultSet() const;
 				
 				bool isTimeTravellingEnabled() const;
-                
+
+                bool isBigStepEnabled() const;
+
                 bool check() const override;
                 
                 const static std::string moduleName;
@@ -131,6 +133,7 @@ namespace storm {
 				const static std::string printNoIllustrationOptionName;
 				const static std::string printFullResultOptionName;
 				const static std::string timeTravellingEnabledName;
+                const static std::string bigStepEnabledName;
             };
             
         } // namespace modules

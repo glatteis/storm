@@ -18,7 +18,7 @@ class TimeTravelling {
    public:
         TimeTravelling() {}
         models::sparse::Dtmc<RationalFunction> timeTravel(models::sparse::Dtmc<RationalFunction> model,
-                                                          modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask);
+                                                          modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask, bool bigStepEnabled = true);
 
        private:
         void updateTreeStates(std::map<RationalFunctionVariable, std::map<uint_fast64_t, std::set<uint_fast64_t>>>& treeStates,

@@ -263,7 +263,10 @@ namespace storm {
         std::unique_ptr<storm::modelchecker::RegionRefinementCheckResult<ValueType>> checkAndRefineRegionWithSparseEngine(std::shared_ptr<storm::models::sparse::Model<ValueType>> const& model, storm::modelchecker::CheckTask<storm::logic::Formula, ValueType> const& task, storm::storage::ParameterRegion<ValueType> const& region, storm::modelchecker::RegionCheckEngine engine, boost::optional<ValueType> const& coverageThreshold, boost::optional<uint64_t> const& refinementDepthThreshold = boost::none, storm::modelchecker::RegionResultHypothesis hypothesis = storm::modelchecker::RegionResultHypothesis::Unknown, bool allowModelSimplification = true, MonotonicitySetting monotonicitySetting = MonotonicitySetting(), uint64_t monThresh = 0) {
             Environment env;
             bool preconditionsValidated = false;
-            auto regionChecker = initializeRegionModelChecker(env, model, task, engine, true, allowModelSimplification, preconditionsValidated, monotonicitySetting);
+            // TODO @Linus Add this as function parameter
+            auto regionSettings = storm::settings::getModule<storm::settings::modules::RegionSettings>();
+            bool generateSplitEstimates = !regionSettings.isBigStepEnabled();
+            auto regionChecker = initializeRegionModelChecker(env, model, task, engine, generateSplitEstimates, allowModelSimplification, preconditionsValidated, monotonicitySetting);
             return regionChecker->performRegionRefinement(env, region, coverageThreshold, refinementDepthThreshold, hypothesis, monThresh);
         }
 

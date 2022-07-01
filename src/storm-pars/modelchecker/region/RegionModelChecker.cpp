@@ -345,7 +345,7 @@ namespace storm {
         
         template <typename ParametricType>
         bool RegionModelChecker<ParametricType>::isRegionSplitEstimateSupported() const {
-            return false;
+            return true;
         }
         
         template <typename ParametricType>

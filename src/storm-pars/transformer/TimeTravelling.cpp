@@ -34,7 +34,8 @@ namespace storm {
 namespace transformer {
 
 models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse::Dtmc<RationalFunction> dtmc,
-                                                                         modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask) {
+                                                                  modelchecker::CheckTask<logic::Formula, RationalNumber> const& checkTask,
+                                                                  bool bigStepEnabled) {
     storage::SparseMatrix<RationalFunction> transitionMatrix = dtmc.getTransitionMatrix();
     uint_fast64_t initialState = dtmc.getInitialStates().getNextSetIndex(0);
 
@@ -354,123 +355,122 @@ models::sparse::Dtmc<RationalFunction> TimeTravelling::timeTravel(models::sparse
     file2.close();
     newnewnewDTMC.getTransitionMatrix().isProbabilistic();
     #endif
-    
-    
-    bool bigStepLiftingEnabled = true;
-    if (bigStepLiftingEnabled)
-    while (!topologicalOrderingQueue.empty()) {
-        auto state = topologicalOrderingQueue.top();
-        topologicalOrderingQueue.pop();
-        
-        transitionMatrix = flexibleMatrix.createSparseMatrix();
 
-        // Identify reachable states - not reachable states do not have do be big-stepped 
-        storage::BitVector trueVector(transitionMatrix.getRowCount(), true);
-        storage::BitVector falseVector(transitionMatrix.getRowCount(), false);
-        storage::BitVector initialStates(transitionMatrix.getRowCount(), false);
-        initialStates.set(initialState, true);
-        storage::BitVector reachableStates = storm::utility::graph::getReachableStates(transitionMatrix, initialStates, trueVector, falseVector);
+    if (bigStepEnabled) {
+        while (!topologicalOrderingQueue.empty()) {
+            auto state = topologicalOrderingQueue.top();
+            topologicalOrderingQueue.pop();
 
-        if (!reachableStates.get(state)) {
-            continue;
-        }
-        
-        std::set<uint_fast64_t> oneStepColumns;
-        std::optional<carl::Variable> parameter;
-        for (auto const& oneStep : flexibleMatrix.getRow(state)) {
-            if (!oneStep.getValue().isConstant()) {
-                auto variables = oneStep.getValue().gatherVariables();
-                STORM_LOG_ERROR_COND(variables.size() == 1, "Multivariate polynomials not allowed!");
-                if (!parameter) {
-                    parameter = *variables.begin();
-                } else {
-                    STORM_LOG_ERROR_COND(*parameter == *variables.begin(), "Multivariate transitions not allowed!");
-                }
-                if (treeStates[*parameter].count(oneStep.getColumn()) && treeStates.at(*parameter).at(oneStep.getColumn()).size() >= 1) {
-                    oneStepColumns.emplace(oneStep.getColumn());
+            transitionMatrix = flexibleMatrix.createSparseMatrix();
+
+            // Identify reachable states - not reachable states do not have do be big-stepped
+            storage::BitVector trueVector(transitionMatrix.getRowCount(), true);
+            storage::BitVector falseVector(transitionMatrix.getRowCount(), false);
+            storage::BitVector initialStates(transitionMatrix.getRowCount(), false);
+            initialStates.set(initialState, true);
+            storage::BitVector reachableStates = storm::utility::graph::getReachableStates(transitionMatrix, initialStates, trueVector, falseVector);
+
+            if (!reachableStates.get(state)) {
+                continue;
+            }
+
+            std::set<uint_fast64_t> oneStepColumns;
+            std::optional<carl::Variable> parameter;
+            for (auto const& oneStep : flexibleMatrix.getRow(state)) {
+                if (!oneStep.getValue().isConstant()) {
+                    auto variables = oneStep.getValue().gatherVariables();
+                    STORM_LOG_ERROR_COND(variables.size() == 1, "Multivariate polynomials not allowed!");
+                    if (!parameter) {
+                        parameter = *variables.begin();
+                    } else {
+                        STORM_LOG_ERROR_COND(*parameter == *variables.begin(), "Multivariate transitions not allowed!");
+                    }
+                    if (treeStates[*parameter].count(oneStep.getColumn()) && treeStates.at(*parameter).at(oneStep.getColumn()).size() >= 1) {
+                        oneStepColumns.emplace(oneStep.getColumn());
+                    }
                 }
             }
-        }
-        
-        if (oneStepColumns.size() == 0) {
-            continue;
-        }
-        
-        // Do big-step lifting from here
-        // Just follow the treeStates and eliminate transitions
-        
-        auto parameterMap = treeStates.at(*parameter);
-        std::set<uint_fast64_t> statesToReach;
-        for (auto const& column : oneStepColumns) {
-            for (auto const& stateToReach : parameterMap.at(column)) {
-                statesToReach.emplace(stateToReach);
+
+            if (oneStepColumns.size() == 0) {
+                continue;
             }
-        }
-        
-        std::cout << "BigStepping " << state << std::endl;
-        
-        struct searchingPath {
-            std::vector<uint_fast64_t> path;
-            RationalFunction probability;
-        };
-        
-        // We enumerate all paths starting in `state` and eventually reaching our goals
-        std::vector<searchingPath> searchingPaths;
-        std::vector<searchingPath> donePaths;
-        
-        searchingPaths.push_back(searchingPath{{state}, utility::one<RationalFunction>()});
-        
-        std::map<carl::Variable, std::set<uint_fast64_t>> alreadyBigStepped;
-        
-        while (!searchingPaths.empty()) {
-            std::vector<searchingPath> newPaths;
-            for (auto const& path : searchingPaths) {
-                for (auto const& entry : flexibleMatrix.getRow(path.path.back())) {
-                    bool continueSearching = false;
-                    // continueSearching |= statesToReach.count(entry.getColumn());
-                    for (auto const& stateToReach : statesToReach) {
-                        if (parameterMap[entry.getColumn()].count(stateToReach)) {
-                            continueSearching = true;
-                            break;
+
+            // Do big-step lifting from here
+            // Just follow the treeStates and eliminate transitions
+
+            auto parameterMap = treeStates.at(*parameter);
+            std::set<uint_fast64_t> statesToReach;
+            for (auto const& column : oneStepColumns) {
+                for (auto const& stateToReach : parameterMap.at(column)) {
+                    statesToReach.emplace(stateToReach);
+                }
+            }
+
+            std::cout << "BigStepping " << state << std::endl;
+
+            struct searchingPath {
+                std::vector<uint_fast64_t> path;
+                RationalFunction probability;
+            };
+
+            // We enumerate all paths starting in `state` and eventually reaching our goals
+            std::vector<searchingPath> searchingPaths;
+            std::vector<searchingPath> donePaths;
+
+            searchingPaths.push_back(searchingPath{{state}, utility::one<RationalFunction>()});
+
+            std::map<carl::Variable, std::set<uint_fast64_t>> alreadyBigStepped;
+
+            while (!searchingPaths.empty()) {
+                std::vector<searchingPath> newPaths;
+                for (auto const& path : searchingPaths) {
+                    for (auto const& entry : flexibleMatrix.getRow(path.path.back())) {
+                        bool continueSearching = false;
+                        // continueSearching |= statesToReach.count(entry.getColumn());
+                        for (auto const& stateToReach : statesToReach) {
+                            if (parameterMap[entry.getColumn()].count(stateToReach)) {
+                                continueSearching = true;
+                                break;
+                            }
+                        }
+                        continueSearching &= std::find(path.path.begin(), path.path.end(), entry.getColumn()) == path.path.end();
+                        continueSearching &= !alreadyBigStepped[*parameter].count(entry.getColumn());
+                        continueSearching &= !(stateRewardVector && !stateRewardVector->at(entry.getColumn()).isZero());
+                        continueSearching &= path.probability.nominator().totalDegree() < 3;
+
+                        std::vector<uint_fast64_t> pathCopy = path.path;
+                        pathCopy.push_back(entry.getColumn());
+                        searchingPath newPath{pathCopy, path.probability * entry.getValue()};
+
+                        if (continueSearching) {
+                            newPaths.push_back(newPath);
+                        } else {
+                            donePaths.push_back(newPath);
+                            std::cout << "Done BigStep: " << newPath.probability << std::endl;
                         }
                     }
-                    continueSearching &= std::find(path.path.begin(), path.path.end(), entry.getColumn()) == path.path.end();
-                    continueSearching &= !alreadyBigStepped[*parameter].count(entry.getColumn());
-                    continueSearching &= !(stateRewardVector && !stateRewardVector->at(entry.getColumn()).isZero());
-                    continueSearching &= path.probability.nominator().totalDegree() < 5;
-                    
-                    std::vector<uint_fast64_t> pathCopy = path.path;
-                    pathCopy.push_back(entry.getColumn());
-                    searchingPath newPath{pathCopy, path.probability *  entry.getValue()};
-
-                    if (continueSearching) {
-                        newPaths.push_back(newPath);
-                    } else {
-                        donePaths.push_back(newPath);
-                        std::cout << "Done BigStep: " << newPath.probability << std::endl;
-                    }
                 }
+                searchingPaths = newPaths;
             }
-            searchingPaths = newPaths;
-        }
-        
-        flexibleMatrix.getRow(state) = std::vector<storage::MatrixEntry<uint_fast64_t, RationalFunction>>();
-        for (auto const& path : donePaths) {
-            for (auto const& entry : path.path) {
-                alreadyBigStepped[*parameter].emplace(entry);
+
+            flexibleMatrix.getRow(state) = std::vector<storage::MatrixEntry<uint_fast64_t, RationalFunction>>();
+            for (auto const& path : donePaths) {
+                for (auto const& entry : path.path) {
+                    alreadyBigStepped[*parameter].emplace(entry);
+                }
+                flexibleMatrix.getRow(state).push_back(storm::storage::MatrixEntry(path.path.back(), path.probability));
             }
-            flexibleMatrix.getRow(state).push_back(storm::storage::MatrixEntry(path.path.back(), path.probability));
-        }
-    
-        uint_fast64_t oldSize = flexibleMatrix.getRowCount();
-        flexibleMatrix = duplicateTransitionsOntoNewStates(flexibleMatrix, state);
-        uint_fast64_t newSize = flexibleMatrix.getRowCount();
-        
-        if (newSize > oldSize) {
-            runningLabeling = extendStateLabeling(runningLabeling, oldSize, newSize, state, labelsInFormula);
-            if (stateRewardVector) {
-                for (auto row = oldSize; row < newSize; row++) {
-                    stateRewardVector->push_back(storm::utility::zero<RationalFunction>());
+
+            uint_fast64_t oldSize = flexibleMatrix.getRowCount();
+            flexibleMatrix = duplicateTransitionsOntoNewStates(flexibleMatrix, state);
+            uint_fast64_t newSize = flexibleMatrix.getRowCount();
+
+            if (newSize > oldSize) {
+                runningLabeling = extendStateLabeling(runningLabeling, oldSize, newSize, state, labelsInFormula);
+                if (stateRewardVector) {
+                    for (auto row = oldSize; row < newSize; row++) {
+                        stateRewardVector->push_back(storm::utility::zero<RationalFunction>());
+                    }
                 }
             }
         }
